@@ -1,0 +1,46 @@
+{{ define "corect" }}
+
+{{ template "header" }}
+
+<main class="px-3">
+  <br>
+  <h2 style="color:#b1b1b1">Редактирование заказов</h2>
+
+  <div class="alert-danger">
+
+    {{ range .Order }}
+
+    {{ if eq .Typ "o" }}
+    <h4 style="color:#09b900">{{ .Order }}</h4>
+    {{ end }}
+    {{ if eq .Typ "n" }}
+    <h4 style="color:#252930">{{ .Order }}</h4>
+    {{ end }}
+    {{ if eq .Typ "t" }}
+    <h4 style="color:#ff6600">{{ .Order }}</h4>
+    {{ end }}
+    {{ if eq .Typ "k" }}
+    <h4 style="color:#9900ff">{{ .Order }}</h4>
+    {{ end }}
+
+    {{ else }}
+    <p class="lead">Еще нет заказов.</p>
+    {{ end }}
+
+  </div>
+
+  <br>
+  <form action="/del_order" method="post">
+    <input autofocus type="text" name="in" id="in" placeholder="номер заказа" class="btn btn-close-white">  <button class="btn btn-warning">Удалить</button>
+  </form>
+  <br>
+  <form action="/edit_order" method="post">
+    <input autofocus type="text" name="num" id="num" placeholder="2" class="btn btn-outline-light">
+    <input autofocus type="text" name="edit" id="edit" placeholder="о 2.8 1" class="btn btn-outline-light">  <button class="btn btn-danger">Изменить</button>
+  </form>
+  <br>
+</main>
+
+{{ template "footer" }}
+
+{{ end }}

@@ -1,0 +1,30 @@
+{{ define "close" }}
+
+{{ template "header" }}
+
+<main class="px-3">
+    <br>
+    <h2 style="color:#b1b1b1">{{ .TotalSum }}</h2>
+    <h3>Наличные: {{ .NalSum }}</h3>
+    <h3 style="color:#ff6600">Терминал: {{ .TermSum }} </h3>
+    <h3 style="color:#09b900">Онлайн: {{ .OnlineSum }} </h3>
+    <h3 style="color:#9900ff">Компания: {{ .KampSum }} </h3>
+    <div class="alert-danger">
+
+
+
+    </div>
+
+    <br>
+    <form action="/smena_close_form" method="post">
+        <input autofocus type="text" name="km" id="km" placeholder="km" class="btn btn-close-white">
+        <input autofocus type="text" name="h" id="h" placeholder="часов" class="btn btn-close-white">
+        <button class="btn btn-warning">Ok</button>
+    </form>
+    <br>
+
+</main>
+
+{{ template "footer" }}
+
+{{ end }}

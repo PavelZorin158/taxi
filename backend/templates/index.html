@@ -1,0 +1,44 @@
+{{ define "index" }}
+
+{{ template "header" }}
+
+<main class="px-3">
+    <br>
+    <h2 style="color:#b1b1b1">{{ .TotalSum }}</h2>
+    <h3>{{ .NalSum }} <span style="color:#ff6600"> {{ .TermSum }} </span>
+        <span style="color:#09b900"> {{ .OnlineSum }} </span>
+        <span style="color:#9900ff"> {{ .KampSum }} </span></h3>
+    <div class="alert-danger">
+
+        {{ range .Order }}
+
+        {{ if eq .Typ "o" }}
+        <h4 style="color:#09b900">{{ .Order }}</h4>
+        {{ end }}
+        {{ if eq .Typ "n" }}
+        <h4 style="color:#252930">{{ .Order }}</h4>
+        {{ end }}
+        {{ if eq .Typ "t" }}
+        <h4 style="color:#ff6600">{{ .Order }}</h4>
+        {{ end }}
+        {{ if eq .Typ "k" }}
+        <h4 style="color:#9900ff">{{ .Order }}</h4>
+        {{ end }}
+
+        {{ else }}
+            <p class="lead">Еще нет заказов.</p>
+        {{ end }}
+
+    </div>
+
+        <br>
+    <form action="/addorder" method="post">
+        <input autofocus type="text" name="in" id="in" placeholder="о 5.3 0.5" class="btn btn-close-white">  <button class="btn btn-warning">Ok</button>
+    </form>
+    <br>
+    <a href="/smena_close" class="btn btn-secondary">Закончить смену</a>
+</main>
+
+{{ template "footer" }}
+
+{{ end }}
