@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type order_smena struct {
@@ -25,6 +26,7 @@ type order_smena_text struct {
 
 type smen struct {
 	// структура для передачи данных в шаблон smena
+	Date      string             // дата открытой смены
 	NalSum    string             // сумма налички за смену
 	TermSum   string             // сумма терминалов за смену
 	OnlineSum string             // сумма онлайнов за смену
@@ -55,6 +57,7 @@ func createTablesDB() {
 	// таблица хранения всех заказов (обновляется при закрытии смены)
 	table = `CREATE TABLE IF NOT EXISTS orders (
  orders_id INTEGER PRIMARY KEY AUTOINCREMENT,
+ date TEXT, 
  price NUMERIC(3,2),
  tea NUMERIC(3,2),
  typ CHAR);`
@@ -301,7 +304,7 @@ func delOrderDB(n int) {
 
 }
 
-func dateSetingsDB() string {
+func dateFromSetingsDB() string {
 	// возвращает дату открытой смены из таблицы setings
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
 	if err != nil {
@@ -325,6 +328,25 @@ func dateSetingsDB() string {
 	return date
 }
 
+func dateToSetingsDB(date string) {
+	//изменяет в таблице setings поле date на date ("close" значит, что сейчас смена закрыта)
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	records := `UPDATE setings SET date = ?`
+	query, err := db.Prepare(records)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = query.Exec(date)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func addKmhDB(date string, km int, h float64) {
 	// добавляет итоги смены в таблицу kmh
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
@@ -344,16 +366,25 @@ func addKmhDB(date string, km int, h float64) {
 	}
 }
 
-func closeDateKmhDB() {
-	// изменяет в таблице setings поле date на "close" (значит, что сейчас смена закрыта)
+func smenaTOordersDB(date string) {
+	// переносит данные из таблицы smena в orders
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-
-	records := `UPDATE setings SET date = "close"`
+	records := `INSERT INTO orders (date, price, tea, typ) SELECT ?, price, tea, typ FROM smena`
 	query, err := db.Prepare(records)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = query.Exec(date)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// очищает таблицу smena
+	records = `DELETE FROM smena`
+	query, err = db.Prepare(records)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -404,25 +435,46 @@ func okOrder(in string) []string {
 }
 
 func smena(w http.ResponseWriter, r *http.Request) {
+	date := dateFromSetingsDB()
+	if date == "close" {
+		// если смена закрыта
+		t, err := template.ParseFiles("./templates/closesmene.html",
+			"./templates/header.html", "./templates/footer.html")
+		if err != nil {
+			fmt.Println("ошибка template.ParseFiles")
+			fmt.Println(err.Error())
+		}
+		now := time.Now()
+		date := now.Format("02.01.06")
+		t.ExecuteTemplate(w, "closesmene", date)
+	} else {
+		// если смена открыта
+		t, err := template.ParseFiles("./templates/index.html",
+			"./templates/header.html", "./templates/footer.html")
+		if err != nil {
+			fmt.Println("ошибка template.ParseFiles")
+			fmt.Println(err.Error())
+		}
 
-	t, err := template.ParseFiles("./templates/index.html",
-		"./templates/header.html", "./templates/footer.html")
-	if err != nil {
-		fmt.Println("ошибка template.ParseFiles")
-		fmt.Println(err.Error())
+		var out smen
+		out.Date = date
+		out.Order = smenaDB()
+		out.NalSum = smenaSumTypDB("n")
+		out.TermSum = smenaSumTypDB("t")
+		out.OnlineSum = smenaSumTypDB("o")
+		out.KampSum = smenaSumTypDB("k")
+		out.TotalSum = smenaSumDB()
+		out.Coment = "ok"
+
+		t.ExecuteTemplate(w, "index", out)
 	}
+}
 
-	var out smen
-	out.Order = smenaDB()
-	out.NalSum = smenaSumTypDB("n")
-	out.TermSum = smenaSumTypDB("t")
-	out.OnlineSum = smenaSumTypDB("o")
-	out.KampSum = smenaSumTypDB("k")
-	out.TotalSum = smenaSumDB()
-	out.Coment = "ok"
-
-	t.ExecuteTemplate(w, "index", out)
-
+func openSmena(w http.ResponseWriter, r *http.Request) {
+	date := r.FormValue("date")
+	fmt.Println("Открывается смена ", date)
+	dateToSetingsDB(date)
+	defer smena(w, r)
 }
 
 func addorder(w http.ResponseWriter, r *http.Request) {
@@ -487,7 +539,7 @@ func sclose(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var out smen
-	//out.Order = smenaDB()
+	out.Date = dateFromSetingsDB()
 	out.NalSum = smenaSumTypDB("n")
 	out.TermSum = smenaSumTypDB("t")
 	out.OnlineSum = smenaSumTypDB("o")
@@ -503,13 +555,13 @@ func scloseForm(w http.ResponseWriter, r *http.Request) {
 	km, _ := strconv.Atoi(kms)
 	hs := r.FormValue("h")
 	h, _ := strconv.ParseFloat(hs, 64)
-	date := dateSetingsDB()
-	addKmhDB(date, km, h)
+	date := dateFromSetingsDB()
+	addKmhDB(date, km, h) // добавляет итоги смены в таблицу kmh
 	fmt.Println("Закрытие смены: ", km, "км, ", h, "ч")
-	closeDateKmhDB()
-	//todo добавить данные из таблицы smena в orders
-	//todo очистить таблицу smena
-
+	//closeDateKmhDB() // изменяет в таблице setings поле date на "close"
+	dateToSetingsDB("close")
+	smenaTOordersDB(date)
+	defer smena(w, r)
 }
 
 func main() {
@@ -522,6 +574,7 @@ func main() {
 	http.HandleFunc("/corect", corect)
 	http.HandleFunc("/del_order", delOrder)
 	http.HandleFunc("/edit_order", editOrder)
+	http.HandleFunc("/open_smena", openSmena)
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	log.Println(http.ListenAndServe(":5005", nil))

@@ -1,0 +1,19 @@
+{{ define "closesmene" }}
+
+{{ template "header" }}
+
+<main class="px-3">
+    <br>
+    <h2 style="color: red">СМЕНА ЗАКРЫТА</h2>
+
+    <br>
+    <form action="/open_smena" method="post">
+        <input autofocus type="text" name="date" id="date" value="{{ . }}" class="btn btn-close-white">  <button class="btn btn-warning">Открыть</button>
+    </form>
+    <br>
+
+</main>
+
+{{ template "footer" }}
+
+{{ end }}
