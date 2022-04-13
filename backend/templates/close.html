@@ -6,10 +6,14 @@
     <br>
     <h3 style="color:#a89d69">{{ .Date }}</h3>
     <h2 style="color:#b1b1b1">{{ .TotalSum }}</h2>
-    <h3>Наличные: {{ .NalSum }}</h3>
-    <h3 style="color:#ff6600">Терминал: {{ .TermSum }} </h3>
-    <h3 style="color:#09b900">Онлайн: {{ .OnlineSum }} </h3>
-    <h3 style="color:#9900ff">Компания: {{ .KampSum }} </h3>
+    <hr>
+    <h3>Наличные: {{ .NalSum }}р  ({{ .NalCount }} заказов)</h3>
+    <h3 style="color:#ff6600">Терминал: {{ .TermSum }}р  ({{ .TermCount }} заказов)  </h3>
+    <h3 style="color:#09b900">Онлайн: {{ .OnlineSum }}р  ({{ .OnlineCount }} заказов) </h3>
+    <h3 style="color:#9900ff">Компания: {{ .KampSum }}р  ({{ .KampCount }} заказов) </h3>
+    <hr>
+    <br>
+    <h4>Наличные+Терминал = {{ .NalTermCount }} заказов</h4>
     <div class="alert-danger">
 
 

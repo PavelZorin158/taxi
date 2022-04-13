@@ -4,6 +4,11 @@
 
 запускается на 5005 порте
 
+собираем имидж с контейнером 
+docker build.
+
+переименовываем
+docker tag 968da7c3b663 rick148/taxi:1.1.0
 
 запуск контейнера
 docker run -v rick_db:/usr/src/app/dir_db -p 5005:5005 rick148/taxi:1.0.2
