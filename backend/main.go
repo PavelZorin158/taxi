@@ -20,6 +20,7 @@ type order_smena struct {
 }
 
 type order_smena_text struct {
+	Num   string // номер заказа
 	Order string // заказ преобразованный в строку для вывода в шаблон
 	Typ   string
 }
@@ -148,7 +149,8 @@ func smenaDB() []order_smena_text {
 			panic(err)
 		}
 
-		orderText.Order = fmt.Sprintf("%d -    %.2f    (%.2f)", order.Num, order.Price, order.Tea)
+		orderText.Num = fmt.Sprintf(" %d ", order.Num)
+		orderText.Order = fmt.Sprintf(" %.2f    (%.2f)", order.Price, order.Tea)
 		orderText.Typ = order.Typ
 		orders = append(orders, orderText)
 	}
@@ -224,31 +226,33 @@ func smenaSumTypDB(typ string) (string, string) {
 	return s, s1
 }
 
-func smenaSumDB() string {
+func smenaSumDB() (string, string) {
 	// возвращает сумму заказов за смену в текстовом виде касса + чай = итог
+	// а вторым аргументом общее количество заказов за смену
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	record, err := db.Query("SELECT sum(price), sum(tea) FROM smena")
+	record, err := db.Query("SELECT sum(price), sum(tea), count() FROM smena")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer record.Close()
 	var price, tea float64
-	var s string
+	var count int
+	var s, c string
 	for record.Next() {
-		record.Scan(&price, &tea)
+		record.Scan(&price, &tea, &count)
 		if err != nil {
 			fmt.Println("Ошибка record.Scan")
 			panic(err)
 		}
-
+		c = fmt.Sprintf("%d", count)
 		s = fmt.Sprintf("касса %.2f  +  чай %.2f  =  %.2f", price, tea, price+tea)
 	}
-	return s
+	return s, c
 }
 
 func addOrderDB(price string, tea string, typ string) {
@@ -489,7 +493,7 @@ func smena(w http.ResponseWriter, r *http.Request) {
 		out.TermSum, out.TermCount = smenaSumTypDB("t")
 		out.OnlineSum, out.OnlineCount = smenaSumTypDB("o")
 		out.KampSum, out.KampCount = smenaSumTypDB("k")
-		out.TotalSum = smenaSumDB()
+		out.TotalSum, out.TotalCount = smenaSumDB()
 		out.Coment = "ok"
 
 		t.ExecuteTemplate(w, "index", out)
@@ -546,7 +550,7 @@ func corect(w http.ResponseWriter, r *http.Request) {
 	out.TermSum, out.TermCount = smenaSumTypDB("t")
 	out.OnlineSum, out.OnlineCount = smenaSumTypDB("o")
 	out.KampSum, out.KampCount = smenaSumTypDB("k")
-	out.TotalSum = smenaSumDB()
+	out.TotalSum, out.TotalCount = smenaSumDB()
 	out.Coment = "ok"
 
 	t.ExecuteTemplate(w, "corect", out)
@@ -570,7 +574,7 @@ func sclose(w http.ResponseWriter, r *http.Request) {
 	out.TermSum, out.TermCount = smenaSumTypDB("t")
 	out.OnlineSum, out.OnlineCount = smenaSumTypDB("o")
 	out.KampSum, out.KampCount = smenaSumTypDB("k")
-	out.TotalSum = smenaSumDB()
+	out.TotalSum, out.TotalCount = smenaSumDB()
 	out.Coment = "ok"
 	count1, _ := strconv.Atoi(out.NalCount)
 	count2, _ := strconv.Atoi(out.TermCount)
@@ -607,5 +611,6 @@ func main() {
 	http.HandleFunc("/open_smena", openSmena)
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
+	http.Handle("/dir_db/", http.StripPrefix("/dir_db/", http.FileServer(http.Dir("../dir_db/"))))
 	log.Println(http.ListenAndServe(":5005", nil))
 }

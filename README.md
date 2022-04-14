@@ -7,10 +7,19 @@
 собираем имидж с контейнером 
 docker build.
 
+docker images
+
 переименовываем
 docker tag 968da7c3b663 rick148/taxi:1.1.0
 
-запуск контейнера
-docker run -v rick_db:/usr/src/app/dir_db -p 5005:5005 rick148/taxi:1.0.2
+docker login
+docker push rick148/taxi:1.1.0
+
+
+остановить старый контейнер на сервере
+docker stop 7a86cf430fb1
+
+запуск контейнера на сервере
+docker run -v rick_db:/usr/src/app/dir_db -p 5005:5005 rick148/taxi:1.1.0
 
 

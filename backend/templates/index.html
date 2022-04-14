@@ -4,15 +4,19 @@
 
 <main class="px-3">
     <br>
-    <h3 style="color:#a89d69">{{ .Date }}</h3>
+    <h3 style="color:#a89d69">{{ .Date }}&nbsp&nbsp[{{ .TotalCount }}]</h3>
     <h2 style="color:#b1b1b1">{{ .TotalSum }}</h2>
     <h3>{{ .NalSum }} <span style="color:#ff6600"> {{ .TermSum }} </span>
         <span style="color:#09b900"> {{ .OnlineSum }} </span>
         <span style="color:#9900ff"> {{ .KampSum }} </span></h3>
     <div class="alert-danger">
 
-        {{ range .Order }}
+        <table align="center">
 
+        {{ range .Order }}
+        <tr>
+            <td><h4>{{ .Num }}&nbsp&nbsp</h4></td>
+        <td align="left">
         {{ if eq .Typ "o" }}
         <h4 style="color:#09b900">{{ .Order }}</h4>
         {{ end }}
@@ -25,16 +29,18 @@
         {{ if eq .Typ "k" }}
         <h4 style="color:#9900ff">{{ .Order }}</h4>
         {{ end }}
+        </td>
 
+        </tr>
         {{ else }}
             <p class="lead">Еще нет заказов.</p>
         {{ end }}
-
+        </table>
     </div>
 
         <br>
     <form action="/addorder" method="post">
-        <input autofocus type="text" name="in" id="in" placeholder="о 5.3 0.5" autocomplete="off" class="btn btn-close-white">
+        <input autofocus type="text" name="in" id="in" placeholder="о 5.3 6" size="10" autocomplete="off" class="btn btn-close-white">&nbsp
         <button class="btn btn-warning">Ok</button>
     </form>
     <br>
