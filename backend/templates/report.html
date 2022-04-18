@@ -1,0 +1,89 @@
+{{ define "report" }}
+
+{{ template "header" }}
+
+<main class="px-3">
+  <br>
+  <h3 style="color:#a89d69">Отчет за {{ .Month }} месяц</h3>
+  <br>
+  <hr>
+
+  <div>
+    <input type="checkbox" id="hd-1" class="hiden"/>
+    <label for="hd-1"><h3>Наличные: {{ .NalSum }}р  ({{ .NalCount }} заказов)</h3></label>
+    <div>
+      <table align="center">
+        {{ range .Nal }}
+        <tr>
+          <td align="left">{{ . }}</td>
+        </tr>
+        {{ else }}
+        <p>Нет заказов.</p>
+        {{ end }}
+      </table>
+    </div>
+    </input>
+    <br/>
+  </div>
+  <br>
+
+
+  <div>
+    <input type="checkbox" id="hd-2" class="hidet"/>
+    <label for="hd-2"><h3>Терминал: {{ .TermSum }}р  ({{ .TermCount }} заказов)</h3></label>
+    <div>
+      <table align="center">
+        {{ range .Term }}
+        <tr>
+          <td align="left">{{ . }}</td>
+        </tr>
+        {{ else }}
+        <p>Нет заказов.</p>
+        {{ end }}
+      </table>
+    </div>
+    </input>
+  </div>
+  <br>
+
+  <div>
+    <input type="checkbox" id="hd-3" class="hideo"/>
+    <label for="hd-3"><h3>Онлайн: {{ .OnlineSum }}р  ({{ .OnlineCount }} заказов)</h3></label>
+    <div>
+      <table align="center">
+        {{ range .Online }}
+        <tr>
+          <td align="left">{{ . }}</td>
+        </tr>
+        {{ else }}
+        <p>Нет заказов.</p>
+        {{ end }}
+      </table>
+    </div>
+    </input>
+  </div>
+  <br>
+
+  <div>
+    <input type="checkbox" id="hd-4" class="hidek"/>
+    <label for="hd-4"><h3>Компания: {{ .KampSum }}р  ({{ .KampCount }} заказов)</h3></label>
+    <div>
+      <table align="center">
+        {{ range .Kamp }}
+        <tr>
+          <td align="left">{{ . }}</td>
+        </tr>
+        {{ else }}
+        <p>Нет заказов.</p>
+        {{ end }}
+      </table>
+    </div>
+    </input>
+  </div>
+  <br>
+  
+</main>
+
+{{ template "footer" }}
+
+{{ end }}

@@ -5,7 +5,7 @@
 запускается на 5005 порте
 
 собираем имидж с контейнером 
-docker build.
+docker build .
 
 docker images
 

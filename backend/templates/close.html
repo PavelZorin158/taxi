@@ -4,7 +4,7 @@
 
 <main class="px-3">
     <br>
-    <h3 style="color:#a89d69">{{ .Date }}</h3>
+    <h3 style="color:#a89d69">{{ .Date }}&nbsp&nbsp[{{ .TotalCount }}]</h3>
     <h2 style="color:#b1b1b1">{{ .TotalSum }}</h2>
     <hr>
     <h3>Наличные: {{ .NalSum }}р  ({{ .NalCount }} заказов)</h3>
@@ -22,8 +22,8 @@
 
     <br>
     <form action="/smena_close_form" method="post">
-        <input autofocus type="text" name="km" id="km" placeholder="km" class="btn btn-close-white">
-        <input autofocus type="text" name="h" id="h" placeholder="часов" class="btn btn-close-white">
+        <input autofocus type="text" name="km" id="km" placeholder="km" autocomplete="off" class="btn btn-close-white">
+        <input autofocus type="text" name="h" id="h" placeholder="часов" autocomplete="off" class="btn btn-close-white">
         <button class="btn btn-warning">Ok</button>
     </form>
     <br>

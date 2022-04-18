@@ -52,32 +52,122 @@ body {
     border-bottom-color: #fff;
 }
 
-/* скрываем чекбоксы и блоки с содержанием */
-.hide {
+/* скрываем чекбоксы и блоки с содержанием для наличных */
+.hiden {
     display: none; 
 }
-.hide + label ~ div{
+.hiden + label ~ div{
     display: none;
 }
 /* оформляем текст label */
-.hide + label {
-    border-bottom: 1px dotted green;
+.hiden + label {
+    border-bottom: 0px dotted #aeaeae;
     padding: 0;
-    color: darkgreen;
+    color: #ffffff;
     cursor: pointer;
     display: inline-block; 
 }
 /* вид текста label при активном переключателе */
-.hide:checked + label {
-    color: red;
+.hiden:checked + label {
+    color: #aeaeae;
     border-bottom: 0;
 }
 /* когда чекбокс активен показываем блоки с содержанием  */
-.hide:checked + label + div {
-    display: block; 
+.hiden:checked + label + div {
+    display: block;
     background: rgb(37, 41, 48);
     -moz-box-shadow: inset 3px 3px 10px #181c1c;
     -webkit-box-shadow: inset 3px 3px 10px #181c1c;
     box-shadow: inset 3px 3px 10px #030303;
     padding: 10px; 
+}
+
+/* скрываем чекбоксы и блоки с содержанием для терминалов */
+.hidet {
+    display: none;
+}
+.hidet + label ~ div{
+    display: none;
+}
+/* оформляем текст label */
+.hidet + label {
+    border-bottom: 0px dotted #ff6600;
+    padding: 0;
+    color: #ff6600;
+    cursor: pointer;
+    display: inline-block;
+}
+/* вид текста label при активном переключателе */
+.hidet:checked + label {
+    color: #c74f00;
+    border-bottom: 0;
+}
+/* когда чекбокс активен показываем блоки с содержанием  */
+.hidet:checked + label + div {
+    display: block;
+    background: rgb(48, 42, 37);
+    -moz-box-shadow: inset 3px 3px 10px #1c1a18;
+    -webkit-box-shadow: inset 3px 3px 10px #1c1a18;
+    box-shadow: inset 3px 3px 10px #030303;
+    padding: 10px;
+}
+
+/* скрываем чекбоксы и блоки с содержанием для онлайнов */
+.hideo {
+    display: none;
+}
+.hideo + label ~ div{
+    display: none;
+}
+/* оформляем текст label */
+.hideo + label {
+    border-bottom: 0px dotted #09B900FF;
+    padding: 0;
+    color: #09B900FF;
+    cursor: pointer;
+    display: inline-block;
+}
+/* вид текста label при активном переключателе */
+.hideo:checked + label {
+    color: #067e00;
+    border-bottom: 0;
+}
+/* когда чекбокс активен показываем блоки с содержанием  */
+.hideo:checked + label + div {
+    display: block;
+    background: rgb(39, 48, 37);
+    -moz-box-shadow: inset 3px 3px 10px #191c18;
+    -webkit-box-shadow: inset 3px 3px 10px #191c18;
+    box-shadow: inset 3px 3px 10px #030303;
+    padding: 10px;
+}
+
+/* скрываем чекбоксы и блоки с содержанием для компаний */
+.hidek {
+    display: none;
+}
+.hidek + label ~ div{
+    display: none;
+}
+/* оформляем текст label */
+.hidek + label {
+    border-bottom: 0px dotted #9900ff;
+    padding: 0;
+    color: #9900ff;
+    cursor: pointer;
+    display: inline-block;
+}
+/* вид текста label при активном переключателе */
+.hidek:checked + label {
+    color: #7901ca;
+    border-bottom: 0;
+}
+/* когда чекбокс активен показываем блоки с содержанием  */
+.hidek:checked + label + div {
+    display: block;
+    background: rgb(43, 37, 48);
+    -moz-box-shadow: inset 3px 3px 10px #1a181c;
+    -webkit-box-shadow: inset 3px 3px 10px #1a181c;
+    box-shadow: inset 3px 3px 10px #030303;
+    padding: 10px;
 }
