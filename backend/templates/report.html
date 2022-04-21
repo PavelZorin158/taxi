@@ -2,10 +2,11 @@
 
 {{ template "header" }}
 
-<main class="px-3">
+<main class="px-3" xmlns="http://www.w3.org/1999/html">
   <br>
   <h3 style="color:#a89d69">Отчет за {{ .Month }} месяц</h3>
   <br>
+  <h4 style="color:#a89d69">Выручка по кассе: {{ .TotalSum }}р. ({{ .TotalCount }} заказов)</h4>
   <hr>
 
   <div>
@@ -25,8 +26,6 @@
     </input>
     <br/>
   </div>
-  <br>
-
 
   <div>
     <input type="checkbox" id="hd-2" class="hidet"/>
@@ -44,7 +43,6 @@
     </div>
     </input>
   </div>
-  <br>
 
   <div>
     <input type="checkbox" id="hd-3" class="hideo"/>
@@ -62,7 +60,6 @@
     </div>
     </input>
   </div>
-  <br>
 
   <div>
     <input type="checkbox" id="hd-4" class="hidek"/>
@@ -80,8 +77,23 @@
     </div>
     </input>
   </div>
-  <br>
-  
+<hr>
+  <p>
+  <table align="center">
+    <tr><td align="left"> РАСХОДЫ :&nbsp</td><td align="right"> Диспетчер &nbsp</td><td align="left">{{.ComDis}} р</td></tr>
+    <tr><td></td><td align="right"> Перевоз &nbsp</td><td align="left">{{ .ComPer }} р</td></tr>
+    <tr><td></td><td align="right"><b> ИТОГО: &nbsp</b></td><td align="left"><b> {{ .ComSum }} р</b></td></tr>
+    <tr><td></td><td align="right">------------------</td><td align="left">------------------</td></tr>
+
+    <tr><td align="left"> ОПЛАЧЕНО :&nbsp</td><td align="right"> Терминалами &nbsp</td><td align="left">{{ .PayTerm }} р ({{ .TermSum }})</td></tr>
+    <tr><td></td><td align="right"> Онлайнами &nbsp</td><td align="left">{{ .PayOnline }} р ({{ .OnlineSum }})</td></tr>
+    <tr><td></td><td align="right"><b> ИТОГО: &nbsp</b></td><td align="left"><b> {{ .PaySum }} р</b></td></tr>
+    <tr><td></td><td align="right">------------------</td><td align="left">------------------</td></tr>
+
+    <tr><td align="left"> Я ДОЛЖЕН :&nbsp</td><td align="right"> {{ .ComSum }}-{{ .PaySum }}=</td><td align="left"><b>{{ .Balance }} р</b></td></tr>
+
+  </table>
+  </p>
 </main>
 
 {{ template "footer" }}

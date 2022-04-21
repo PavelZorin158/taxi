@@ -12,6 +12,14 @@ import (
 	"time"
 )
 
+const (
+	// todo поместить эти константы в БД
+	ComDis       = 20  // комиссия диспетчера (в %)
+	ComPer       = 170 // комиссия перевозчика за свои услуги (в рублях)
+	ComPerTer    = 3   // комиссия перевозчика обналичку терминалов (в рублях)
+	ComPerOnline = 3   // комиссия перевозчика обналичку онлайнов (в рублях)
+)
+
 type order_smena struct {
 	Num   int     // номер заказа
 	Price float64 // сумма заказа по приложению
@@ -50,7 +58,16 @@ type rep struct {
 	Kamp        []string // срез заказов компания
 	TotalSum    string   // общая сумма всех заказов
 	TotalCount  string   // общее количество всех заказов
-	Coment      string   // для коментария
+
+	ComDis    string // комиссия диспетчера
+	ComPer    string // комиссия перевозчика
+	ComSum    string // ComDis + ComPer
+	PayTerm   string // оплачено терминалами
+	PayOnline string // оплачено онлайнами
+	PaySum    string // PayTerm + PayOnline
+	Balance   string // ComSum - PaySum
+
+	Coment string // для коментария
 }
 
 type smen struct {
@@ -81,6 +98,7 @@ func createTablesDB() {
 	}
 	defer db.Close()
 	// таблица для заказов на смене
+	// номер заказа, сумма, чаевые, тип заказа (n, t, o, k)
 	table := `CREATE TABLE IF NOT EXISTS smena (
  num INTEGER PRIMARY KEY AUTOINCREMENT,
  price NUMERIC(3,2),
@@ -90,6 +108,7 @@ func createTablesDB() {
 	mySqlExec(db, table)
 
 	// таблица хранения всех заказов (обновляется при закрытии смены)
+	// номер записи, дата заказа, сумма, чаевые, тип заказа (n, t, o, k)
 	table = `CREATE TABLE IF NOT EXISTS orders (
  orders_id INTEGER PRIMARY KEY AUTOINCREMENT,
  date TEXT, 
@@ -99,6 +118,7 @@ func createTablesDB() {
 	mySqlExec(db, table)
 
 	// таблица с данными о времени и пробеге по сменам
+	// номер записи, дата открытия смены, пробег, время
 	table = `CREATE TABLE IF NOT EXISTS kmh (
  kmh_id INTEGER PRIMARY KEY AUTOINCREMENT,
  date TEXT, 
@@ -186,14 +206,14 @@ func smenaDB() []order_smena_text {
 }
 
 func kmhDB() []kmh_text {
-	// возвращает срез заказов за смену
+	// возвращает срез смен из таблицы kmh
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	record, err := db.Query("SELECT * FROM kmh")
+	record, err := db.Query("SELECT * FROM kmh ORDER BY date")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -228,7 +248,7 @@ func indexNumDB() {
 	}
 	defer db.Close()
 
-	// читаем в срез nums все записи поля num (ромера заказа)
+	// читаем в срез nums все записи поля num (номера заказа)
 	record, err := db.Query("SELECT num FROM smena")
 	if err != nil {
 		log.Fatal(err)
@@ -249,6 +269,46 @@ func indexNumDB() {
 	records := ``
 	for i := 1; i <= len(nums); i++ {
 		records = `UPDATE smena SET num = ? WHERE num = ?`
+		query, err := db.Prepare(records)
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, err = query.Exec(i, nums[i-1])
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+func indexNumSmenDB() {
+	// нумерует смены в таблице kmh по порядку
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// читаем в срез nums все записи поля kmh_id (номера смен)
+	record, err := db.Query("SELECT kmh_id FROM kmh")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer record.Close()
+	nums := []int{}
+	num := 0
+	for record.Next() {
+		record.Scan(&num)
+		if err != nil {
+			fmt.Println("Ошибка record.Scan")
+			panic(err)
+		}
+		nums = append(nums, num)
+	}
+
+	// переиндексируем в таблице smena поле num по порядку
+	records := ``
+	for i := 1; i <= len(nums); i++ {
+		records = `UPDATE kmh SET kmh_id = ? WHERE kmh_id = ?`
 		query, err := db.Prepare(records)
 		if err != nil {
 			log.Fatal(err)
@@ -468,34 +528,39 @@ func smenaTOordersDB(date string) {
 	}
 }
 
-func reportDB(month string, typ string) (string, string, []string) {
+func reportDB(month string, typ string) (float64, int, []string) {
 	// возвращает сумму заказов за месяц month по типу typ в текстовом виде в sum
 	// количество в cont и список заказов в orders
+	var record *sql.Rows
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 	monthSQL := fmt.Sprintf("__.%s.22", month)
-	record, err := db.Query("SELECT sum(price), count() FROM orders WHERE typ = ? AND date LIKE ?", typ, monthSQL)
-	if err != nil {
-		log.Fatal(err)
+	if typ == "all" {
+		record, err = db.Query("SELECT sum(price), count() FROM orders")
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		record, err = db.Query("SELECT sum(price), count() FROM orders WHERE typ = ? AND date LIKE ?", typ, monthSQL)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	defer record.Close()
-	var i float64 // для суммы всех заказов типа typ
-	var c int     // для количества всех заказов типа typ
-	var sum, count string
+	var sum float64 // для суммы всех заказов типа typ
+	var count int   // для количества всех заказов типа typ
 	for record.Next() {
-		record.Scan(&i, &c)
+		record.Scan(&sum, &count)
 		if err != nil {
 			fmt.Println("Ошибка record.Scan")
 			panic(err)
 		}
-		sum = fmt.Sprintf("%.2f", i)
-		count = fmt.Sprintf("%d", c)
 	}
 
-	record, err = db.Query("SELECT date, price, tea FROM orders WHERE typ = ? AND date LIKE ?", typ, monthSQL)
+	record, err = db.Query("SELECT date, price, tea FROM orders WHERE typ = ? AND date LIKE ? ORDER BY date", typ, monthSQL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -535,7 +600,27 @@ func delSmenDB(n int) {
 		log.Fatal(err)
 	}
 
-	// indexkmhDB() todo переиндексировать номена смен
+	indexNumSmenDB()
+	// удалить все заказы из таблицы orders за дату удаленного заказа в таблице kmh
+}
+
+func editSmenDB(num string, km string, h string) {
+	// изменяет смену номер num в БД в таблице kmh
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	records := `UPDATE kmh SET km = ?, h = ? WHERE kmh_id = ?`
+	query, err := db.Prepare(records)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = query.Exec(km, h, num)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func okOrder(in string) []string {
@@ -597,7 +682,7 @@ func okOrder(in string) []string {
 }
 
 func smena(w http.ResponseWriter, r *http.Request) {
-	//todo проверку куков
+	//todo проверку куков (для авторизации)
 	date := dateFromSetingsDB()
 	if date == "close" {
 		// если смена закрыта
@@ -659,7 +744,6 @@ func delOrder(w http.ResponseWriter, r *http.Request) {
 func editOrder(w http.ResponseWriter, r *http.Request) {
 	// номер редактируемого заказа
 	num := r.FormValue("num")
-	//num, _ := strconv.Atoi(in)
 	// новые данные заказа
 	edit := r.FormValue("edit")
 	inSl := okOrder(edit)
@@ -732,6 +816,8 @@ func scloseForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func report(w http.ResponseWriter, r *http.Request) {
+	var nalSum, termSum, onlineSum, kampSum, totalSum float64
+	var nalCount, termCount, onlineCount, kampCount, totalCount int
 	t, err := template.ParseFiles("./templates/report.html",
 		"./templates/header.html", "./templates/footer.html")
 	if err != nil {
@@ -740,10 +826,34 @@ func report(w http.ResponseWriter, r *http.Request) {
 	}
 	out := rep{}
 	out.Month = "04" //todo сделать ввод отчетного месяца
-	out.NalSum, out.NalCount, out.Nal = reportDB(out.Month, "n")
-	out.TermSum, out.TermCount, out.Term = reportDB(out.Month, "t")
-	out.OnlineSum, out.OnlineCount, out.Online = reportDB(out.Month, "o")
-	out.KampSum, out.KampCount, out.Kamp = reportDB(out.Month, "k")
+	nalSum, nalCount, out.Nal = reportDB(out.Month, "n")
+	out.NalSum = fmt.Sprintf("%.2f", nalSum)
+	out.NalCount = fmt.Sprintf("%d", nalCount)
+	termSum, termCount, out.Term = reportDB(out.Month, "t")
+	out.TermSum = fmt.Sprintf("%.2f", termSum)
+	out.TermCount = fmt.Sprintf("%d", termCount)
+	onlineSum, onlineCount, out.Online = reportDB(out.Month, "o")
+	out.OnlineSum = fmt.Sprintf("%.2f", onlineSum)
+	out.OnlineCount = fmt.Sprintf("%d", onlineCount)
+	kampSum, kampCount, out.Kamp = reportDB(out.Month, "k")
+	out.KampSum = fmt.Sprintf("%.2f", kampSum)
+	out.KampCount = fmt.Sprintf("%d", kampCount)
+	totalSum, totalCount, _ = reportDB(out.Month, "all")
+	out.TotalSum = fmt.Sprintf("%.2f", totalSum)
+	out.TotalCount = fmt.Sprintf("%d", totalCount)
+	comDisR := (nalSum + termSum + onlineSum) / 100 * ComDis
+	out.ComDis = fmt.Sprintf("%.2f", comDisR)
+	out.ComPer = fmt.Sprintf("%d", ComPer)
+	comSum := comDisR + ComPer
+	out.ComSum = fmt.Sprintf("%.2f", comSum)
+	payTerm := termSum / 100 * (100 - ComPerTer)
+	out.PayTerm = fmt.Sprintf("%.2f", payTerm)
+	payOnline := onlineSum / 100 * (100 - ComPerOnline)
+	out.PayOnline = fmt.Sprintf("%.2f", payOnline)
+	paySum := payTerm + payOnline
+	out.PaySum = fmt.Sprintf("%.2f", paySum)
+	out.Balance = fmt.Sprintf("%.2f", comSum-paySum)
+
 	t.ExecuteTemplate(w, "report", out)
 }
 
@@ -763,6 +873,20 @@ func delSmen(w http.ResponseWriter, r *http.Request) {
 	in := r.FormValue("in")
 	i, _ := strconv.Atoi(in)
 	delSmenDB(i)
+
+	defer kmh(w, r)
+}
+
+func editSmen(w http.ResponseWriter, r *http.Request) {
+	// номер редактируемой смены
+	num := r.FormValue("num")
+	//num, _ := strconv.Atoi(in)
+	// новый километраж за смену
+	km := r.FormValue("km")
+	// новое время смены
+	h := r.FormValue("h")
+	editSmenDB(num, km, h)
+
 	defer kmh(w, r)
 }
 
@@ -780,7 +904,7 @@ func main() {
 	http.HandleFunc("/report", report)
 	http.HandleFunc("/kmh", kmh)
 	http.HandleFunc("/del_smen", delSmen)
-	// http.HandleFunc("/edit_smen", delSmen) //todo редактор смен
+	http.HandleFunc("/edit_smen", editSmen)
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	http.Handle("/dir_db/", http.StripPrefix("/dir_db/", http.FileServer(http.Dir("../dir_db/"))))
