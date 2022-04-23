@@ -18,7 +18,8 @@ const (
 	ComPer       = 170  // комиссия перевозчика за свои услуги (в рублях)
 	ComPerTer    = 3    // комиссия перевозчика обналичку терминалов (в рублях)
 	ComPerOnline = 3    // комиссия перевозчика обналичку онлайнов (в рублях)
-	FuelCons     = 10.1 // расход топлива (л/100км)
+	FuelCons     = 12   // расход топлива (л/100км)
+	FuelPrice    = 1.24 // стоимость топлива (в рублях)
 	WorkDay      = 24   // количество рабочих дней - для расчета комисси за смену
 )
 
@@ -212,8 +213,9 @@ func smenaDB() []order_smena_text {
 	return orders
 }
 
-func kmhDB(fuel float64, comDis float64, comPer float64) []kmh_text {
+func kmhDB(fuel float64, fuelPrice float64, comDis float64, comPer float64) []kmh_text {
 	// принимает расход топлива в л/100км (10.5) fuel
+	// 			стоимость топлива в руб (1.2) fuelPrice
 	// 			комиссию дисп в % (20) comDis
 	//			комиссию перевозчика в руб за смену (7.7) comPer
 	// возвращает срез смен из таблицы kmh
@@ -223,7 +225,9 @@ func kmhDB(fuel float64, comDis float64, comPer float64) []kmh_text {
 	}
 	defer db.Close()
 
-	record, err := db.Query("SELECT kmh_id, date, km , h, price, tea, count FROM kmh INNER JOIN (SELECT date AS orders_date, sum(price) AS price, sum(tea) AS tea, count() AS count FROM orders GROUP BY date) ON date = orders_date ORDER BY date")
+	record, err := db.Query("SELECT kmh_id, date, km , h, price, tea, count FROM kmh INNER JOIN" +
+		" (SELECT date AS orders_date, sum(price) AS price, sum(tea) AS tea, count() AS count FROM orders" +
+		" GROUP BY date) ON date = orders_date ORDER BY date")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -248,7 +252,7 @@ func kmhDB(fuel float64, comDis float64, comPer float64) []kmh_text {
 		smen.Price = fmt.Sprintf("%.0f", price)
 		smen.Tea = fmt.Sprintf("%.0f", tea)
 		smen.Count = fmt.Sprintf("%d", count)
-		prof := price - (fuel / 100 * float64(km)) - (price / 100 * comDis) - comPer
+		prof := price - (fuel / 100 * float64(km) * fuelPrice) - (price / 100 * comDis) - comPer
 		smen.Prof = fmt.Sprintf("%.0f", prof)
 		eff := prof / h
 		smen.Eff = fmt.Sprintf("%.1f", eff)
@@ -882,7 +886,7 @@ func kmh(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err.Error())
 	}
 
-	out := kmhDB(FuelCons, ComDis, ComPer/WorkDay)
+	out := kmhDB(FuelCons, FuelPrice, ComDis, ComPer/WorkDay)
 
 	t.ExecuteTemplate(w, "kmh", out)
 }
