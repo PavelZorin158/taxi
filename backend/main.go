@@ -14,10 +14,12 @@ import (
 
 const (
 	// todo поместить эти константы в БД
-	ComDis       = 20  // комиссия диспетчера (в %)
-	ComPer       = 170 // комиссия перевозчика за свои услуги (в рублях)
-	ComPerTer    = 3   // комиссия перевозчика обналичку терминалов (в рублях)
-	ComPerOnline = 3   // комиссия перевозчика обналичку онлайнов (в рублях)
+	ComDis       = 20   // комиссия диспетчера (в %)
+	ComPer       = 170  // комиссия перевозчика за свои услуги (в рублях)
+	ComPerTer    = 3    // комиссия перевозчика обналичку терминалов (в рублях)
+	ComPerOnline = 3    // комиссия перевозчика обналичку онлайнов (в рублях)
+	FuelCons     = 10.1 // расход топлива (л/100км)
+	WorkDay      = 24   // количество рабочих дней - для расчета комисси за смену
 )
 
 type order_smena struct {
@@ -35,10 +37,15 @@ type order_smena_text struct {
 
 type kmh_text struct {
 	// тип для передачи в шаблон kmh
-	Num  string // номер смены
-	Date string // дата смены
-	Km   string // пробег за смену
-	H    string // время смены
+	Num   string // номер смены
+	Date  string // дата смены
+	Km    string // пробег за смену
+	H     string // время смены
+	Price string // касса за смену
+	Tea   string // чаевые за смену
+	Count string // кол-во заказов за смену
+	Prof  string // прибыль за смену
+	Eff   string // эффективность км/ч
 }
 
 type rep struct {
@@ -205,7 +212,10 @@ func smenaDB() []order_smena_text {
 	return orders
 }
 
-func kmhDB() []kmh_text {
+func kmhDB(fuel float64, comDis float64, comPer float64) []kmh_text {
+	// принимает расход топлива в л/100км (10.5) fuel
+	// 			комиссию дисп в % (20) comDis
+	//			комиссию перевозчика в руб за смену (7.7) comPer
 	// возвращает срез смен из таблицы kmh
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
 	if err != nil {
@@ -213,19 +223,19 @@ func kmhDB() []kmh_text {
 	}
 	defer db.Close()
 
-	record, err := db.Query("SELECT * FROM kmh ORDER BY date")
+	record, err := db.Query("SELECT kmh_id, date, km , h, price, tea, count FROM kmh INNER JOIN (SELECT date AS orders_date, sum(price) AS price, sum(tea) AS tea, count() AS count FROM orders GROUP BY date) ON date = orders_date ORDER BY date")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer record.Close()
 
 	smens := []kmh_text{}
-	var num, km int
+	var num, km, count int
 	var date string
-	var h float64
+	var h, price, tea float64
 	smen := kmh_text{}
 	for record.Next() {
-		record.Scan(&num, &date, &km, &h)
+		record.Scan(&num, &date, &km, &h, &price, &tea, &count)
 		if err != nil {
 			fmt.Println("Ошибка record.Scan")
 			panic(err)
@@ -235,6 +245,13 @@ func kmhDB() []kmh_text {
 		smen.Date = fmt.Sprintf("%s", date)
 		smen.Km = fmt.Sprintf("%d", km)
 		smen.H = fmt.Sprintf("%.1f", h)
+		smen.Price = fmt.Sprintf("%.0f", price)
+		smen.Tea = fmt.Sprintf("%.0f", tea)
+		smen.Count = fmt.Sprintf("%d", count)
+		prof := price - (fuel / 100 * float64(km)) - (price / 100 * comDis) - comPer
+		smen.Prof = fmt.Sprintf("%.0f", prof)
+		eff := prof / h
+		smen.Eff = fmt.Sprintf("%.1f", eff)
 		smens = append(smens, smen)
 	}
 	return smens
@@ -865,7 +882,8 @@ func kmh(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err.Error())
 	}
 
-	out := kmhDB()
+	out := kmhDB(FuelCons, ComDis, ComPer/WorkDay)
+
 	t.ExecuteTemplate(w, "kmh", out)
 }
 

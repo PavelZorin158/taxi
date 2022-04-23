@@ -9,12 +9,28 @@
 
     <div class="alert-danger">
         <table align="center">
+            <tr>
+                <td align="center"><h5>№</h5></td>
+                <td align="center"><h5>Дата</h5></td>
+                <td align="center"><h5>Км</h5></td>
+                <td align="center"><h5>Ч&nbsp</h5></td>
+                <td align="right"><h5>&nbspКасса</h5></td>
+                <td align="right"><h5>&nbspЧай</h5></td>
+                <td align="center"><h5>&nbspЗак.</h5></td>
+                <td align="center"><h5>&nbspПриб.</h5></td>
+                <td align="center"><h5>&nbspпр/ч</h5></td>
+            </tr>
             {{ range . }}
             <tr>
                 <td align="left"><h4>{{ .Num }}&nbsp&nbsp</h4></td>
                 <td align="left"><h4>{{ .Date }}&nbsp&nbsp</h4></td>
                 <td align="center"><h4>{{ .Km }}&nbsp&nbsp</h4></td>
                 <td align="left"><h4>{{ .H }}</h4></td>
+                <td align="right"><h4>&nbsp&nbsp{{ .Price }}р</h4></td>
+                <td align="right"><h4>&nbsp&nbsp{{ .Tea }}р</h4></td>
+                <td align="center"><h4>&nbsp&nbsp{{ .Count }}</h4></td>
+                <td align="right"><h4>&nbsp&nbsp{{ .Prof }}р</h4></td>
+                <td align="right"><h4>&nbsp&nbsp{{ .Eff }}</h4></td>
             </tr>
             {{ else }}
             <p class="lead">Еще нет смен.</p>
