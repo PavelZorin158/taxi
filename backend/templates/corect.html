@@ -2,7 +2,7 @@
 
 {{ template "header" }}
 
-<main class="px-3">
+<main class="px-3" xmlns="http://www.w3.org/1999/html">
     <br>
     <h2 style="color:#b1b1b1"><a  href="/corect" class="btn btn-secondary">Заказы</a>
         Редактирование заказов <a  href="/kmh" class="btn btn-secondary">Смены</a></h2>
@@ -28,9 +28,9 @@
                         </td>
 
                     </tr>
-                    {{ else }}
-                    <p class="lead">Еще нет заказов.</p>
-                    {{ end }}
+            {{ else }}
+                <p class="lead">Еще нет заказов.</p>
+            {{ end }}
         </table>
     </div>
 
@@ -46,7 +46,19 @@
         <button class="btn btn-warning">Изменить</button>
     </form>
     <br>
-    <p><a  href="dir_db/taxi.db" download class="btn btn-secondary">Скачать БД</a></p>
+
+    <form enctype="multipart/form-data" action="/save_db" method="post">
+        <p><input type="file" name="file" id="file"><input type="submit" value="Загрузить БД" class="btn btn-secondary">&nbsp
+            <a  href="dir_db/taxi.db" download class="btn btn-secondary">Скачать БД</a></p>
+    </form>
+
+    {{ if eq .Coment "errSaveDB" }}
+        <p><h4 style="color:red">Не правильное имя для загрузки taxi.db</h4></p>
+    {{ end }}
+    {{ if eq .Coment "okSaveDB" }}
+    <p><h4 style="color:greenyellow">taxi.db загружена на сервер</h4></p>
+    {{ end }}
+
 </main>
 
 {{ template "footer" }}

@@ -8,8 +8,11 @@
 
     <br>
     <form action="/open_smena" method="post">
-        <input autofocus type="text" name="date" id="date" value="{{ . }}" class="btn btn-close-white">&nbsp<button class="btn btn-warning">Открыть</button>
+        <input autofocus type="text" name="date" id="date" value="{{ .Date }}" class="btn btn-close-white">&nbsp&nbsp<button class="btn btn-warning">Открыть</button>
     </form>
+    {{ if eq .Ok "err" }}
+    <p><h3 style="color:red">Не коректная дата!</h3></p>
+    {{ end }}
     <br>
 
 </main>

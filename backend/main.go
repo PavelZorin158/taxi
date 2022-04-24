@@ -5,22 +5,12 @@ import (
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"html/template"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-)
-
-const (
-	// todo поместить эти константы в БД
-	ComDis       = 20   // комиссия диспетчера (в %)
-	ComPer       = 170  // комиссия перевозчика за свои услуги (в рублях)
-	ComPerTer    = 3    // комиссия перевозчика обналичку терминалов (в рублях)
-	ComPerOnline = 3    // комиссия перевозчика обналичку онлайнов (в рублях)
-	FuelCons     = 12   // расход топлива (л/100км)
-	FuelPrice    = 1.24 // стоимость топлива (в рублях)
-	WorkDay      = 24   // количество рабочих дней - для расчета комисси за смену
 )
 
 type order_smena struct {
@@ -34,6 +24,11 @@ type order_smena_text struct {
 	Num   string // номер заказа
 	Order string // заказ преобразованный в строку для вывода в шаблон
 	Typ   string
+}
+
+type close_smena struct {
+	Date string // дата
+	Ok   string // для ошибочной даты
 }
 
 type kmh_text struct {
@@ -96,6 +91,20 @@ type smen struct {
 	Coment       string             // для коментария
 }
 
+var ComDis float64       // комиссия диспетчера (в %)
+var ComPer int           // комиссия перевозчика за свои услуги (в рублях)
+var ComPerTer float64    // комиссия перевозчика за обналичку терминалов (в %)
+var ComPerOnline float64 // комиссия перевозчика за обналичку онлайнов (в %)
+var FuelCons float64     // расход топлива (л/100км)
+var FuelPrice float64    // стоимость топлива (в рублях)
+var WorkDay int          // количество рабочих дней - для расчета комисси за смену
+
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
 func createTablesDB() {
 	// создание таблицы и файла БД, если их нет
 
@@ -134,10 +143,25 @@ func createTablesDB() {
  h NUMERIC(2,1) );`
 	mySqlExec(db, table)
 
-	// таблица для хранения даты открытой смены
+	// таблица для хранения основных переменных
+	// date - дата открытой смены
+	// comdis - комиссия диспетчера (в %)
+	// comper - комиссия перевозчика за свои услуги (в рублях)
+	// comperter - комиссия перевозчика за обналичку терминалов (в %)
+	// comperonline - комиссия перевозчика за обналичку онлайнов (в %)
+	// fuelcons - расход топлива (л/100км)
+	// fuelprice - стоимость топлива (в рублях)
+	// workday - количество рабочих дней - для расчета комисси за смену
 	table = `CREATE TABLE IF NOT EXISTS setings (
  seting_id INTEGER PRIMARY KEY AUTOINCREMENT,
- date TEXT DEFAULT "");`
+ date TEXT DEFAULT "",
+ comdis NUMERIC(2,2),
+ comper INTEGER,
+ comperter NUMERIC(2,2),
+ comperonline NUMERIC(2,2),
+ fuelcons NUMERIC(2,2),
+ fuelprice NUMERIC(2,2),
+ workday);`
 	mySqlExec(db, table)
 	// проверяем, есть ли в таблице set данные в поле date
 	record, err := db.Query("SELECT date FROM setings")
@@ -154,9 +178,10 @@ func createTablesDB() {
 		}
 	}
 	if date == "" {
-		//если нет данных в поле date добавляем их
-		records := `INSERT INTO setings(date) VALUES ("close")`
-		// "close" - значит смена закрыта
+		//если нет данных в поле date, значит таблица только создана и в ней нет данных, добавляем их
+		records := `INSERT INTO setings(date, comdis, comper, comperter, comperonline, fuelcons,
+                    fuelprice, workday) VALUES ("close", 20, 170, 3, 3, 12, 1.24, 24)`
+		// "close" - значит смена закрыта смена
 		query, err := db.Prepare(records)
 		if err != nil {
 			log.Fatal(err)
@@ -164,6 +189,29 @@ func createTablesDB() {
 		_, err = query.Exec()
 		if err != nil {
 			log.Fatal(err)
+		}
+	}
+}
+
+func loadSettingsDB() {
+	// читает основные переменные из БД
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	record, err := db.Query("SELECT comdis, comper, comperter, comperonline, fuelcons," +
+		" fuelprice, workday FROM setings")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer record.Close()
+	for record.Next() {
+		record.Scan(&ComDis, &ComPer, &ComPerTer, &ComPerOnline, &FuelCons, &FuelPrice, &WorkDay)
+		if err != nil {
+			fmt.Println("Ошибка record.Scan")
+			panic(err)
 		}
 	}
 }
@@ -252,7 +300,7 @@ func kmhDB(fuel float64, fuelPrice float64, comDis float64, comPer float64) []km
 		smen.Price = fmt.Sprintf("%.0f", price)
 		smen.Tea = fmt.Sprintf("%.0f", tea)
 		smen.Count = fmt.Sprintf("%d", count)
-		prof := price - (fuel / 100 * float64(km) * fuelPrice) - (price / 100 * comDis) - comPer
+		prof := price - (fuel / 100 * float64(km) * fuelPrice) - (price / 100 * comDis) - comPer + tea
 		smen.Prof = fmt.Sprintf("%.0f", prof)
 		eff := prof / h
 		smen.Eff = fmt.Sprintf("%.1f", eff)
@@ -519,6 +567,7 @@ func addKmhDB(date string, km int, h float64) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	indexNumSmenDB()
 }
 
 func smenaTOordersDB(date string) {
@@ -547,6 +596,7 @@ func smenaTOordersDB(date string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 }
 
 func reportDB(month string, typ string) (float64, int, []string) {
@@ -604,13 +654,29 @@ func reportDB(month string, typ string) (float64, int, []string) {
 }
 
 func delSmenDB(n int) {
-	// удаление смены n
+	// удаление смены n из БД
+	var date string
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
+	// читаем дату смены n
+	record, err := db.Query("SELECT date FROM kmh WHERE kmh_id = ?", n)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer record.Close()
+	for record.Next() {
+		record.Scan(&date)
+		if err != nil {
+			fmt.Println("Ошибка record.Scan")
+			panic(err)
+		}
+	}
+
+	// удаляем смену n из таблицы kmh
 	records := `DELETE FROM kmh WHERE kmh_id = ?`
 	query, err := db.Prepare(records)
 	if err != nil {
@@ -621,8 +687,17 @@ func delSmenDB(n int) {
 		log.Fatal(err)
 	}
 
+	// удаляем заказы с датой из таблицы orders
+	records = `DELETE FROM orders WHERE date = ?`
+	query, err = db.Prepare(records)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = query.Exec(date)
+	if err != nil {
+		log.Fatal(err)
+	}
 	indexNumSmenDB()
-	// удалить все заказы из таблицы orders за дату удаленного заказа в таблице kmh
 }
 
 func editSmenDB(num string, km string, h string) {
@@ -713,9 +788,11 @@ func smena(w http.ResponseWriter, r *http.Request) {
 			fmt.Println("ошибка template.ParseFiles")
 			fmt.Println(err.Error())
 		}
+		var outt close_smena
 		now := time.Now()
-		date := now.Format("02.01.06")
-		t.ExecuteTemplate(w, "closesmene", date)
+		outt.Date = now.Format("02.01.06")
+		outt.Ok = "ok"
+		t.ExecuteTemplate(w, "closesmene", outt)
 	} else {
 		// если смена открыта
 		t, err := template.ParseFiles("./templates/index.html",
@@ -740,10 +817,38 @@ func smena(w http.ResponseWriter, r *http.Request) {
 }
 
 func openSmena(w http.ResponseWriter, r *http.Request) {
+	var ok int
 	date := r.FormValue("date")
-	fmt.Println("Открывается смена ", date)
-	dateToSetingsDB(date)
-	defer smena(w, r)
+	dateSl := strings.Split(date, ".")
+	day, err := strconv.Atoi(dateSl[0])
+	if err != nil {
+		ok++
+	}
+	if day < 10 {
+		dateSl[0] = "0" + strconv.Itoa(day)
+	}
+	if day > 31 {
+		ok++
+	}
+	mes, err := strconv.Atoi(dateSl[1])
+	if err != nil {
+		ok++
+	}
+	if mes > 12 {
+		ok++
+	}
+	_, err = strconv.Atoi(dateSl[2])
+	if err != nil {
+		ok++
+	}
+	if ok == 0 {
+		date = strings.Join(dateSl, ".")
+		fmt.Println("Открывается смена ", date)
+		dateToSetingsDB(date)
+		defer smena(w, r)
+	} else {
+		defer errorDate(w, r)
+	}
 }
 
 func addorder(w http.ResponseWriter, r *http.Request) {
@@ -865,7 +970,7 @@ func report(w http.ResponseWriter, r *http.Request) {
 	comDisR := (nalSum + termSum + onlineSum) / 100 * ComDis
 	out.ComDis = fmt.Sprintf("%.2f", comDisR)
 	out.ComPer = fmt.Sprintf("%d", ComPer)
-	comSum := comDisR + ComPer
+	comSum := comDisR + float64(ComPer)
 	out.ComSum = fmt.Sprintf("%.2f", comSum)
 	payTerm := termSum / 100 * (100 - ComPerTer)
 	out.PayTerm = fmt.Sprintf("%.2f", payTerm)
@@ -886,7 +991,7 @@ func kmh(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err.Error())
 	}
 
-	out := kmhDB(FuelCons, FuelPrice, ComDis, ComPer/WorkDay)
+	out := kmhDB(FuelCons, FuelPrice, ComDis, float64(ComPer/WorkDay))
 
 	t.ExecuteTemplate(w, "kmh", out)
 }
@@ -912,8 +1017,70 @@ func editSmen(w http.ResponseWriter, r *http.Request) {
 	defer kmh(w, r)
 }
 
+func saveDb(w http.ResponseWriter, r *http.Request) {
+	//todo сделать проверку пользователя для загрузки БД
+	t, err := template.ParseFiles("./templates/corect.html",
+		"./templates/header.html", "./templates/footer.html")
+	if err != nil {
+		fmt.Println("ошибка template.ParseFiles")
+		fmt.Println(err.Error())
+	}
+	var out smen
+
+	// parse data
+	err = r.ParseMultipartForm(1024)
+	check(err)
+
+	// get 'file'
+	file, handler, err := r.FormFile("file")
+	check(err)
+	if handler.Filename != "taxi.db" {
+		// попытка загрузить не ту БД
+		out.Coment = "errSaveDB"
+	} else {
+		oldDb, err := ioutil.ReadFile("../dir_db/taxi.db")
+		check(err)
+		err = ioutil.WriteFile("../dir_db/old_taxi.db", oldDb, 0644)
+		check(err)
+		fileName := "../dir_db/" + handler.Filename
+
+		// read file bytes
+		fileBytes, err := ioutil.ReadAll(file)
+		check(err)
+
+		// write bytes to a localfile
+		err = ioutil.WriteFile(fileName, fileBytes, 0644)
+		check(err)
+		out.Coment = "okSaveDB"
+		file.Close()
+	}
+	out.Order = smenaDB()
+	out.NalSum, out.NalCount = smenaSumTypDB("n")
+	out.TermSum, out.TermCount = smenaSumTypDB("t")
+	out.OnlineSum, out.OnlineCount = smenaSumTypDB("o")
+	out.KampSum, out.KampCount = smenaSumTypDB("k")
+	out.TotalSum, out.TotalCount = smenaSumDB()
+
+	t.ExecuteTemplate(w, "corect", out)
+}
+
+func errorDate(w http.ResponseWriter, r *http.Request) {
+	t, err := template.ParseFiles("./templates/closesmene.html",
+		"./templates/header.html", "./templates/footer.html")
+	if err != nil {
+		fmt.Println("ошибка template.ParseFiles")
+		fmt.Println(err.Error())
+	}
+	var out close_smena
+	now := time.Now()
+	out.Date = now.Format("02.01.06")
+	out.Ok = "err"
+	t.ExecuteTemplate(w, "closesmene", out)
+}
+
 func main() {
 	createTablesDB()
+	loadSettingsDB()
 
 	http.HandleFunc("/", smena)
 	http.HandleFunc("/addorder", addorder)
@@ -927,6 +1094,7 @@ func main() {
 	http.HandleFunc("/kmh", kmh)
 	http.HandleFunc("/del_smen", delSmen)
 	http.HandleFunc("/edit_smen", editSmen)
+	http.HandleFunc("/save_db", saveDb)
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	http.Handle("/dir_db/", http.StripPrefix("/dir_db/", http.FileServer(http.Dir("../dir_db/"))))
