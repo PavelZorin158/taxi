@@ -61,6 +61,12 @@ type rep struct {
 	Kamp        []string // срез заказов компания
 	TotalSum    string   // общая сумма всех заказов
 	TotalCount  string   // общее количество всех заказов
+	Distance    string   // общий пробег
+	PayDist     string   // стоимость топлива за месяц
+	Hours       string   // количество часов
+	Count       string   // количество смен
+	Salary      string   // Чистый заработок за вычетом топлива и комиссий
+	SalaryH     string   // Salary / Hours
 
 	ComDis    string // комиссия диспетчера
 	ComPer    string // комиссия перевозчика
@@ -599,6 +605,32 @@ func smenaTOordersDB(date string) {
 
 }
 
+func distanceHDB(month string) (int, float64, int) {
+	// возвращает пробег, время и количество смен за месяц mounth
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	monthSQL := fmt.Sprintf("__.%s.22", month)
+	record, err := db.Query("SELECT sum(km), sum(h), count() FROM kmh WHERE date LIKE ?", monthSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer record.Close()
+	var h float64 // для суммы часов
+	var km int    // для суммы километров
+	var count int // для количества смен
+	for record.Next() {
+		record.Scan(&km, &h, &count)
+		if err != nil {
+			fmt.Println("Ошибка record.Scan")
+			log.Fatal(err)
+		}
+	}
+	return km, h, count
+}
+
 func reportDB(month string, typ string) (float64, int, []string) {
 	// возвращает сумму заказов за месяц month по типу typ в текстовом виде в sum
 	// количество в cont и список заказов в orders
@@ -979,7 +1011,15 @@ func report(w http.ResponseWriter, r *http.Request) {
 	paySum := payTerm + payOnline
 	out.PaySum = fmt.Sprintf("%.2f", paySum)
 	out.Balance = fmt.Sprintf("%.2f", comSum-paySum)
-
+	distance, hours, count := distanceHDB(out.Month)
+	out.Distance = fmt.Sprintf("%.d", distance)
+	out.Hours = fmt.Sprintf("%.2f", hours)
+	out.Count = fmt.Sprintf("%.d", count)
+	payDist := FuelCons / 100 * float64(distance) * FuelPrice
+	out.PayDist = fmt.Sprintf("%.0f", payDist)
+	salary := totalSum - payDist - comSum
+	out.Salary = fmt.Sprintf("%.0f", salary)
+	out.SalaryH = fmt.Sprintf("%.1f", salary/hours)
 	t.ExecuteTemplate(w, "report", out)
 }
 
@@ -1095,6 +1135,7 @@ func main() {
 	http.HandleFunc("/del_smen", delSmen)
 	http.HandleFunc("/edit_smen", editSmen)
 	http.HandleFunc("/save_db", saveDb)
+	// todo сделать редактор основных переменных
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	http.Handle("/dir_db/", http.StripPrefix("/dir_db/", http.FileServer(http.Dir("../dir_db/"))))

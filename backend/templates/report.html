@@ -80,6 +80,14 @@
 <hr>
   <p>
   <table align="center">
+    <tr><td align="right"> Пробег :&nbsp</td><td align="left">{{ .Distance }} км&nbsp&nbsp({{ .PayDist }}р)</td></tr>
+    <tr><td align="right"> Рабочее время :&nbsp</td><td align="left">{{ .Hours }} ч</td></tr>
+    <tr><td align="right"> Смен :&nbsp</td><td align="left">{{ .Count }}</td></tr>
+  <tr><td align="right"><h5 style="color:#ffd87d">чистый заработок :&nbsp</h5></td><td align="left">
+    <h5 style="color:#ffd87d">{{ .Salary }} р&nbsp&nbsp<small>({{ .SalaryH }}р/ч)</small></h5></td></tr>
+  </table>
+<hr>
+  <table align="center">
     <tr><td align="left"> РАСХОДЫ :&nbsp</td><td align="right"> Диспетчер &nbsp</td><td align="left">{{.ComDis}} р</td></tr>
     <tr><td></td><td align="right"> Перевоз &nbsp</td><td align="left">{{ .ComPer }} р</td></tr>
     <tr><td></td><td align="right"><b> ИТОГО: &nbsp</b></td><td align="left"><b> {{ .ComSum }} р</b></td></tr>
