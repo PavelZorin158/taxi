@@ -1,13 +1,16 @@
 package main
 
 import (
+	"crypto/md5"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -97,13 +100,13 @@ type smen struct {
 	Coment       string             // для коментария
 }
 
-var ComDis float64       // комиссия диспетчера (в %)
-var ComPer int           // комиссия перевозчика за свои услуги (в рублях)
-var ComPerTer float64    // комиссия перевозчика за обналичку терминалов (в %)
-var ComPerOnline float64 // комиссия перевозчика за обналичку онлайнов (в %)
-var FuelCons float64     // расход топлива (л/100км)
-var FuelPrice float64    // стоимость топлива (в рублях)
-var WorkDay int          // количество рабочих дней - для расчета комисси за смену
+var ComDis float64           // комиссия диспетчера (в %)
+var ComPer int               // комиссия перевозчика за свои услуги (в рублях)
+var ComPerTer float64        // комиссия перевозчика за обналичку терминалов (в %)
+var ComPerOnline float64     // комиссия перевозчика за обналичку онлайнов (в %)
+var FuelCons float64 = 12    // расход топлива (л/100км)
+var FuelPrice float64 = 1.24 // стоимость топлива (в рублях)
+var WorkDay int = 24         // количество рабочих дней - для расчета комисси за смену
 
 func check(e error) {
 	if e != nil {
@@ -111,83 +114,207 @@ func check(e error) {
 	}
 }
 
+func GetMd5(pas string) string {
+	h := md5.New()
+	h.Write([]byte(pas))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func versionDB() int {
+	// возвращает версию БД, 0 если база старая и нет поля версии, 1 если taxi.db нет
+	var ver int
+	if _, err := os.Stat("../dir_db/taxi.db"); os.IsNotExist(err) {
+		return -1
+	}
+
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	if err != nil {
+		fmt.Println("ошибка1 ", err)
+	}
+	defer db.Close()
+
+	record, err := db.Query("SELECT ver FROM settings")
+	if err != nil {
+		return 0
+	}
+	defer record.Close()
+	for record.Next() {
+		record.Scan(&ver)
+	}
+	return ver
+} //2
+
+func transformDBto2() {
+	// трансформируем БД во 2 версию
+	oldDb, err := ioutil.ReadFile("../dir_db/taxi.db")
+	check(err)
+	err = ioutil.WriteFile("../dir_db/taxi_ver1.db", oldDb, 0644)
+	check(err)
+	err = os.Remove("../dir_db/taxi.db")
+	check(err)
+	createTablesDB()
+
+	dbOld, err := sql.Open("sqlite3", "../dir_db/taxi_ver1.db")
+	check(err)
+	defer dbOld.Close()
+
+	// переносим данные из старой базы таблицы orders в новую базу в orders
+	record, err := dbOld.Query("SELECT kmh_id, price, tea, typ FROM kmh INNER JOIN orders" +
+		" ON kmh.date = orders.date ORDER BY orders.date;")
+	check(err)
+	defer record.Close()
+	userId := "1"
+	type orders struct {
+		sessionId int
+		price     float64
+		tea       float64
+		typ       string
+	}
+	temps := []orders{}
+	var temp orders
+	for record.Next() {
+		record.Scan(&temp.sessionId, &temp.price, &temp.tea, &temp.typ)
+		temps = append(temps, temp)
+	}
+
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+	records := `INSERT INTO orders(user_id, session_id, price, tea, type) VALUES (?, ?, ?, ?, ?)`
+	query, err := db.Prepare(records)
+	check(err)
+
+	for i, t := range temps {
+		fmt.Println("taxi.db/orders/string", i)
+		_, err = query.Exec(userId, t.sessionId, t.price, t.tea, t.typ)
+		check(err)
+	}
+
+	// переносим данные из старой базы таблицы kmh в новую базу в sessions
+	record, err = dbOld.Query("SELECT kmh_id, date, km, h FROM kmh")
+	check(err)
+	type kmh struct {
+		kmhId int
+		date  string
+		km    int
+		h     float64
+	}
+	temps2 := []kmh{}
+	var temp2 kmh
+	for record.Next() {
+		record.Scan(&temp2.kmhId, &temp2.date, &temp2.km, &temp2.h)
+		temps2 = append(temps2, temp2)
+	}
+	records = `INSERT INTO sessions(session_id, date, user_id, km, h) VALUES (?, ?, ?, ?, ?)`
+	query, err = db.Prepare(records)
+	check(err)
+
+	for i, t := range temps2 {
+		fmt.Println("taxi.db/sessions/string", i)
+		_, err = query.Exec(t.kmhId, t.date, userId, t.km, t.h)
+		check(err)
+	}
+
+	// создаем данные в новой базе в таблице users
+	hashPas := GetMd5("2666")
+	records = `INSERT INTO users(name, password, session_id, date, fuelcons, fuelprice, workday)
+ VALUES ("Rick", ?, 0, "", 12, 1.24, 24)`
+	query, err = db.Prepare(records)
+	check(err)
+	fmt.Println("taxi.db/userss/string 1")
+	_, err = query.Exec(hashPas)
+	check(err)
+
+} //2
+
 func createTablesDB() {
 	// создание таблицы и файла БД, если их нет
 
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
 	if err != nil {
 		fmt.Println("ошибка открытия(создания) файла taxi.db")
-		log.Fatal(err)
+		panic(err)
 	}
 	defer db.Close()
 	// таблица для заказов на смене
 	// номер заказа, сумма, чаевые, тип заказа (n, t, o, k)
-	table := `CREATE TABLE IF NOT EXISTS smena (
- num INTEGER PRIMARY KEY AUTOINCREMENT,
+	table := `CREATE TABLE IF NOT EXISTS orderssession (
+ os_id INTEGER PRIMARY KEY AUTOINCREMENT,
+ user_id INTEGER,
  price NUMERIC(3,2),
  tea NUMERIC(3,2),
- typ CHAR
- );`
+ type CHAR);`
 	mySqlExec(db, table)
 
 	// таблица хранения всех заказов (обновляется при закрытии смены)
 	// номер записи, дата заказа, сумма, чаевые, тип заказа (n, t, o, k)
 	table = `CREATE TABLE IF NOT EXISTS orders (
  orders_id INTEGER PRIMARY KEY AUTOINCREMENT,
- date TEXT, 
+ user_id INTEGER,
+ session_id INTEGER,
  price NUMERIC(3,2),
  tea NUMERIC(3,2),
- typ CHAR);`
+ type CHAR);`
 	mySqlExec(db, table)
 
 	// таблица с данными о времени и пробеге по сменам
 	// номер записи, дата открытия смены, пробег, время
-	table = `CREATE TABLE IF NOT EXISTS kmh (
- kmh_id INTEGER PRIMARY KEY AUTOINCREMENT,
- date TEXT, 
- km INT,
- h NUMERIC(2,1) );`
+	table = `CREATE TABLE IF NOT EXISTS sessions (
+ session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+ date WARCHAR(8),
+ user_id INTEGER,
+ km INTEGER,
+ h NUMERIC(2,1));`
 	mySqlExec(db, table)
 
 	// таблица для хранения основных переменных
-	// date - дата открытой смены
+	// ver - версия БД
 	// comdis - комиссия диспетчера (в %)
 	// comper - комиссия перевозчика за свои услуги (в рублях)
 	// comperter - комиссия перевозчика за обналичку терминалов (в %)
 	// comperonline - комиссия перевозчика за обналичку онлайнов (в %)
-	// fuelcons - расход топлива (л/100км)
-	// fuelprice - стоимость топлива (в рублях)
-	// workday - количество рабочих дней - для расчета комисси за смену
-	table = `CREATE TABLE IF NOT EXISTS setings (
- seting_id INTEGER PRIMARY KEY AUTOINCREMENT,
- date TEXT DEFAULT "",
- comdis NUMERIC(2,2),
- comper INTEGER,
- comperter NUMERIC(2,2),
- comperonline NUMERIC(2,2),
- fuelcons NUMERIC(2,2),
- fuelprice NUMERIC(2,2),
- workday);`
+	table = `CREATE TABLE IF NOT EXISTS settings (
+ ver INTEGER,
+ comdis NUMERIC(2,1),
+ comper NUMERIC(2,2),
+ comperter NUMERIC(2,1),
+ comperonline NUMERIC(2,1));`
 	mySqlExec(db, table)
-	// проверяем, есть ли в таблице set данные в поле date
-	record, err := db.Query("SELECT date FROM setings")
+
+	// таблица для хранения пользователей
+	// session_id номер открытой смены
+	// date дата открытой смены
+	// fuelcons	NUMERIC(2,1)	расход топлива
+	// fuelprice	NUMERIC(2,2)	стоимость топлива
+	// workday	INTEGER	рабочих дней в месяце
+	table = `CREATE TABLE IF NOT EXISTS users (
+ users_id INTEGER PRIMARY KEY AUTOINCREMENT,
+ name warchar(20),
+ password TEXT,
+ session_id INTEGER,
+ date warchar(8),
+ fuelcons NUMERIC(2,1),
+ fuelprice NUMERIC(2,2),
+ workday INTEGER);`
+	mySqlExec(db, table)
+
+	// проверяем, есть ли в таблице set данные в поле ver
+	record, err := db.Query("SELECT ver FROM settings")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer record.Close()
-	date := ""
+	ver := 0
 	for record.Next() {
-		record.Scan(&date)
+		record.Scan(&ver)
 		if err != nil {
 			fmt.Println("Ошибка record.Scan")
 			panic(err)
 		}
 	}
-	if date == "" {
+	if ver == 0 {
 		//если нет данных в поле date, значит таблица только создана и в ней нет данных, добавляем их
-		records := `INSERT INTO setings(date, comdis, comper, comperter, comperonline, fuelcons,
-                    fuelprice, workday) VALUES ("close", 20, 170, 3, 3, 12, 1.24, 24)`
-		// "close" - значит смена закрыта смена
+		records := `INSERT INTO settings(ver, comdis, comper, comperter, comperonline) VALUES (2, 20, 170, 3, 3)`
 		query, err := db.Prepare(records)
 		if err != nil {
 			log.Fatal(err)
@@ -197,7 +324,7 @@ func createTablesDB() {
 			log.Fatal(err)
 		}
 	}
-}
+} //2
 
 func loadSettingsDB() {
 	// читает основные переменные из БД
@@ -207,20 +334,19 @@ func loadSettingsDB() {
 	}
 	defer db.Close()
 
-	record, err := db.Query("SELECT comdis, comper, comperter, comperonline, fuelcons," +
-		" fuelprice, workday FROM setings")
+	record, err := db.Query("SELECT comdis, comper, comperter, comperonline FROM settings")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer record.Close()
 	for record.Next() {
-		record.Scan(&ComDis, &ComPer, &ComPerTer, &ComPerOnline, &FuelCons, &FuelPrice, &WorkDay)
+		record.Scan(&ComDis, &ComPer, &ComPerTer, &ComPerOnline)
 		if err != nil {
 			fmt.Println("Ошибка record.Scan")
 			panic(err)
 		}
 	}
-}
+} //2
 
 func mySqlExec(db *sql.DB, s string) {
 	query, err := db.Prepare(s)
@@ -234,7 +360,7 @@ func mySqlExec(db *sql.DB, s string) {
 		log.Fatal(err)
 	}
 	query.Close()
-}
+} //2
 
 func smenaDB() []order_smena_text {
 	// возвращает срез заказов за смену
@@ -1119,7 +1245,15 @@ func errorDate(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	createTablesDB()
+	ver := versionDB()
+	fmt.Println("версия БД: ", ver)
+	if ver == 0 {
+		fmt.Println("обнаружена старая БД. Трансформирую в версию: 2")
+		transformDBto2()
+	} else if ver == -1 {
+		fmt.Println("База данных taxi.db не найдена. Создана пустая")
+		createTablesDB()
+	}
 	loadSettingsDB()
 
 	http.HandleFunc("/", smena)
