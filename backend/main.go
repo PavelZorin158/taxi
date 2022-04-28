@@ -30,8 +30,9 @@ type order_smena_text struct {
 }
 
 type close_smena struct {
-	Date string // дата
-	Ok   string // для ошибочной даты
+	UserName string // имя пользователя
+	Date     string // дата
+	Ok       string // для ошибочной даты
 }
 
 type kmh_text struct {
@@ -84,6 +85,8 @@ type rep struct {
 
 type smen struct {
 	// структура для передачи данных в шаблон smena
+	UserName     string             // имя пользователя
+	SessionId    string             // id смены
 	Date         string             // дата открытой смены
 	NalSum       string             // сумма налички за смену
 	NalCount     string             // количество наличных заказов за смену
@@ -124,6 +127,7 @@ func versionDB() int {
 	// возвращает версию БД, 0 если база старая и нет поля версии, 1 если taxi.db нет
 	var ver int
 	if _, err := os.Stat("../dir_db/taxi.db"); os.IsNotExist(err) {
+		// если файл не найден
 		return -1
 	}
 
@@ -218,13 +222,26 @@ func transformDBto2() {
 	// создаем данные в новой базе в таблице users
 	hashPas := GetMd5("2666")
 	records = `INSERT INTO users(name, password, session_id, date, fuelcons, fuelprice, workday)
- VALUES ("Rick", ?, 0, "", 12, 1.24, 24)`
+ VALUES ("Rick", ?, 0, "close", 12, 1.24, 24)`
 	query, err = db.Prepare(records)
 	check(err)
 	fmt.Println("taxi.db/userss/string 1")
 	_, err = query.Exec(hashPas)
 	check(err)
 
+	// записываем в новой базе в таблице settings последний номер смены
+	record, err = db.Query("SELECT max(session_id) FROM sessions")
+	check(err)
+	var maxsession int
+	for record.Next() {
+		record.Scan(&maxsession)
+	}
+
+	records = `UPDATE settings SET lastsession = ?`
+	query, err = db.Prepare(records)
+	check(err)
+	_, err = query.Exec(maxsession)
+	check(err)
 } //2
 
 func createTablesDB() {
@@ -278,7 +295,8 @@ func createTablesDB() {
  comdis NUMERIC(2,1),
  comper NUMERIC(2,2),
  comperter NUMERIC(2,1),
- comperonline NUMERIC(2,1));`
+ comperonline NUMERIC(2,1),
+ lastsession INTEGER);`
 	mySqlExec(db, table)
 
 	// таблица для хранения пользователей
@@ -362,18 +380,34 @@ func mySqlExec(db *sql.DB, s string) {
 	query.Close()
 } //2
 
-func smenaDB() []order_smena_text {
-	// возвращает срез заказов за смену
+func userDB(userIdString string) (string, int) {
+	// возвращает имя пользователя и id открытой смены по userId
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+	userId, _ := strconv.Atoi(userIdString)
+	record, err := db.Query("SELECT name, session_id FROM users WHERE users_id = ?", userId)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("func userDB: отсутствует user_id")
+		return "", 0
 	}
+	defer record.Close()
+	var name string
+	var sessionId int
+	for record.Next() {
+		record.Scan(&name, &sessionId)
+	}
+	return name, sessionId
+} //2
+
+func smenaDB(userid string) []order_smena_text {
+	// возвращает срез заказов за смену для userid
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
 	defer db.Close()
 
-	record, err := db.Query("SELECT * FROM smena")
-	if err != nil {
-		log.Fatal(err)
-	}
+	record, err := db.Query("SELECT os_id, price, tea, type FROM orderssession WHERE user_id = ?;", userid)
+	check(err)
 	defer record.Close()
 	orders := []order_smena_text{}
 	order := order_smena{}
@@ -391,7 +425,7 @@ func smenaDB() []order_smena_text {
 		orders = append(orders, orderText)
 	}
 	return orders
-}
+} //2
 
 func kmhDB(fuel float64, fuelPrice float64, comDis float64, comPer float64) []kmh_text {
 	// принимает расход топлива в л/100км (10.5) fuel
@@ -521,18 +555,60 @@ func indexNumSmenDB() {
 	}
 }
 
-func smenaSumTypDB(typ string) (string, string) {
-	// возвращает сумму заказов за смену по типу  в текстовом виде
+func veryfUserDB(name string, pas string) (string, bool) {
+	// возвращает true при совпадении пароля и userid из таблицы users
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
+	check(err)
+	defer db.Close()
+	record, err := db.Query("SELECT password, users_id FROM users WHERE name = ?", name)
+	check(err)
+	var password string
+	var userid int
+	for record.Next() {
+		record.Scan(&password, &userid)
 	}
+	if userid == 0 {
+		// нет такого имени
+		return fmt.Sprint(userid), false
+	}
+	if GetMd5(pas) != password {
+		// не соответствует пароль
+		return "", false
+	} else {
+		return fmt.Sprint(userid), true
+	}
+} //2
+
+func addUserDB(name string, pas string) string {
+	// добавляет нового пользователя в БД в таблицу users
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+	hashPas := GetMd5(pas)
+	records := `INSERT INTO users(name, password, session_id, date, fuelcons, fuelprice, workday)
+ VALUES (?, ?, 0, "close", 12, 1.24, 24)`
+	query, err := db.Prepare(records)
+	check(err)
+	_, err = query.Exec(name, hashPas)
+	check(err)
+
+	record, err := db.Query("SELECT users_id FROM users WHERE name = ?", name)
+	check(err)
+	var userid int
+	for record.Next() {
+		record.Scan(&userid)
+	}
+	return fmt.Sprint(userid)
+} //2
+
+func smenaSumTypDB(userid string, typ string) (string, string) {
+	// возвращает сумму и количество заказов за смену по типу для userid в текстовом виде
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
 	defer db.Close()
 
-	record, err := db.Query("SELECT sum(price), count() FROM smena WHERE typ = ?", typ)
-	if err != nil {
-		log.Fatal(err)
-	}
+	record, err := db.Query("SELECT sum(price), count() FROM orderssession WHERE type = ? AND user_id = ?", typ, userid)
+	check(err)
 	defer record.Close()
 	var i float64 // для суммы всех заказов типа typ
 	var c int     // для количества всех заказов типа typ
@@ -548,21 +624,18 @@ func smenaSumTypDB(typ string) (string, string) {
 		s1 = fmt.Sprintf("%d", c)
 	}
 	return s, s1
-}
+} //2
 
-func smenaSumDB() (string, string) {
-	// возвращает сумму заказов за смену в текстовом виде касса + чай = итог
+func smenaSumDB(userid string) (string, string) {
+	// возвращает сумму заказов за смену в текстовом виде "касса + чай = итог"
 	// а вторым аргументом общее количество заказов за смену
+	// для userid
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 
-	record, err := db.Query("SELECT sum(price), sum(tea), count() FROM smena")
-	if err != nil {
-		log.Fatal(err)
-	}
+	record, err := db.Query("SELECT sum(price), sum(tea), count() FROM orderssession WHERE user_id = ?", userid)
+	check(err)
 	defer record.Close()
 	var price, tea float64
 	var count int
@@ -577,27 +650,20 @@ func smenaSumDB() (string, string) {
 		s = fmt.Sprintf("касса %.2f  +  чай %.2f  =  %.2f", price, tea, price+tea)
 	}
 	return s, c
-}
+} //2
 
-func addOrderDB(price string, tea string, typ string) {
-	// добавляет заказ в БД в таблице smena
+func addOrderDB(userid string, price string, tea string, typ string) {
+	// добавляет заказ в БД в таблице orderssession
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 
-	records := `INSERT INTO smena(price, tea, typ) VALUES (?, ?, ?)`
+	records := `INSERT INTO orderssession(user_id, price, tea, type) VALUES (?, ?, ?, ?)`
 	query, err := db.Prepare(records)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = query.Exec(price, tea, typ)
-	if err != nil {
-		log.Fatal(err)
-	}
-	indexNumDB()
-}
+	check(err)
+	_, err = query.Exec(userid, price, tea, typ)
+	check(err)
+} //2
 
 func editOrderDB(num string, price string, tea string, typ string) {
 	// изменяет заказ номер num в БД в таблице smena
@@ -639,97 +705,92 @@ func delOrderDB(n int) {
 	indexNumDB()
 }
 
-func dateFromSetingsDB() string {
-	// возвращает дату открытой смены из таблицы setings
+func dateOpenSessionDB(userid string) string {
+	// возвращает дату открытой смены из таблицы users по userid. "close" если закрыта
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 
-	record, err := db.Query("SELECT date FROM setings")
-	if err != nil {
-		log.Fatal(err)
-	}
+	record, err := db.Query("SELECT date FROM users WHERE users_id = ?", userid)
+	check(err)
 	defer record.Close()
 	date := ""
 	for record.Next() {
 		record.Scan(&date)
-		if err != nil {
-			fmt.Println("Ошибка record.Scan")
-			panic(err)
-		}
+		check(err)
 	}
 	return date
-}
+} //2
 
-func dateToSetingsDB(date string) {
-	//изменяет в таблице setings поле date на date ("close" значит, что сейчас смена закрыта)
+func dateToUsersDB(userid string, date string) {
+	//изменяет в таблице users поле date на date ("close" значит, что сейчас смена закрыта)
+	// в поле session_id пишет номер смены или 0
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 
-	records := `UPDATE setings SET date = ?`
-	query, err := db.Prepare(records)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = query.Exec(date)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
+	var lastsession int
+	if date != "close" {
+		record, err := db.Query("SELECT lastsession FROM settings")
+		check(err)
+		for record.Next() {
+			record.Scan(&lastsession)
+		}
+		lastsession++
 
-func addKmhDB(date string, km int, h float64) {
-	// добавляет итоги смены в таблицу kmh
-	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
+		records := `UPDATE settings SET lastsession = ?`
+		query, err := db.Prepare(records)
+		check(err)
+		_, err = query.Exec(lastsession)
+		check(err)
 	}
+
+	records := `UPDATE users SET date = ?, session_id = ?  WHERE users_id = ?`
+	query, err := db.Prepare(records)
+	check(err)
+	_, err = query.Exec(date, lastsession, userid)
+	check(err)
+} //2
+
+func addSessionsDB(userid string, date string, km int, h float64) {
+	// добавляет итоги смены в таблицу sessions
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
 	defer db.Close()
 
-	records := `INSERT INTO kmh(date, km, h) VALUES (?, ?, ?)`
-	query, err := db.Prepare(records)
-	if err != nil {
-		log.Fatal(err)
+	var sessionid int
+	record, err := db.Query("SELECT session_id FROM users WHERE users_id = ?", userid)
+	check(err)
+	for record.Next() {
+		record.Scan(&sessionid)
 	}
-	_, err = query.Exec(date, km, h)
-	if err != nil {
-		log.Fatal(err)
-	}
-	indexNumSmenDB()
-}
 
-func smenaTOordersDB(date string) {
-	// переносит данные из таблицы smena в orders
-	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-	records := `INSERT INTO orders (date, price, tea, typ) SELECT ?, price, tea, typ FROM smena`
+	records := `INSERT INTO sessions(session_id, date, user_id, km, h) VALUES (?, ?, ?, ?, ?)`
 	query, err := db.Prepare(records)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = query.Exec(date)
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
+	_, err = query.Exec(sessionid, date, userid, km, h)
+	check(err)
+	// indexNumSmenDB()
+} //2
+
+func smenaTOordersDB(userid string, date string) {
+	// переносит данные из таблицы sessions в orders для userid
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+	records := `INSERT INTO orders (user_id, session_id, price, tea, type) SELECT user_id, session_id, price, tea, type FROM users INNER JOIN orderssession ON users.users_id = orderssession.user_id WHERE users_id = ?`
+	query, err := db.Prepare(records)
+	check(err)
+	_, err = query.Exec(userid)
+	check(err)
+
 	// очищает таблицу smena
-	records = `DELETE FROM smena`
+	records = `DELETE FROM orderssession WHERE user_id = ?`
 	query, err = db.Prepare(records)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = query.Exec()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-}
+	check(err)
+	_, err = query.Exec(userid)
+	check(err)
+} //2
 
 func distanceHDB(month string) (int, float64, int) {
 	// возвращает пробег, время и количество смен за месяц mounth
@@ -855,7 +916,7 @@ func delSmenDB(n int) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	indexNumSmenDB()
+	//indexNumSmenDB()
 }
 
 func editSmenDB(num string, km string, h string) {
@@ -936,43 +997,55 @@ func okOrder(in string) []string {
 }
 
 func smena(w http.ResponseWriter, r *http.Request) {
-	//todo проверку куков (для авторизации)
-	date := dateFromSetingsDB()
-	if date == "close" {
-		// если смена закрыта
-		t, err := template.ParseFiles("./templates/closesmene.html",
-			"./templates/header.html", "./templates/footer.html")
-		if err != nil {
-			fmt.Println("ошибка template.ParseFiles")
-			fmt.Println(err.Error())
-		}
-		var outt close_smena
-		now := time.Now()
-		outt.Date = now.Format("02.01.06")
-		outt.Ok = "ok"
-		t.ExecuteTemplate(w, "closesmene", outt)
+	userCookie, err := r.Cookie("userid")
+	if err != nil {
+		// нет кука userid, надо залогинится
+		// переходим на страницу логина
+		t, err := template.ParseFiles("templates/login.html",
+			"templates/header.html", "templates/footer.html")
+		check(err)
+		err = t.ExecuteTemplate(w, "login", "0")
+		check(err)
 	} else {
-		// если смена открыта
-		t, err := template.ParseFiles("./templates/index.html",
-			"./templates/header.html", "./templates/footer.html")
-		if err != nil {
-			fmt.Println("ошибка template.ParseFiles")
-			fmt.Println(err.Error())
+		// в куках есть userid
+		userid := userCookie.Value
+		date := dateOpenSessionDB(userid)
+		if date == "close" {
+			// если смена закрыта
+			t, err := template.ParseFiles("./templates/closesmene.html",
+				"./templates/header.html", "./templates/footer.html")
+			check(err)
+			var outt close_smena
+			outt.UserName, _ = userDB(userid)
+			now := time.Now()
+			outt.Date = now.Format("02.01.06")
+			outt.Ok = "ok"
+			t.ExecuteTemplate(w, "closesmene", outt)
+		} else {
+			// если смена открыта
+			t, err := template.ParseFiles("./templates/index.html",
+				"./templates/header.html", "./templates/footer.html")
+			if err != nil {
+				fmt.Println("ошибка template.ParseFiles")
+				fmt.Println(err.Error())
+			}
+			var out smen
+			var sessionId int
+			out.UserName, sessionId = userDB(userid)
+			out.SessionId = fmt.Sprint(sessionId)
+			out.Date = date
+			out.Order = smenaDB(userid)
+			out.NalSum, out.NalCount = smenaSumTypDB(userid, "n")
+			out.TermSum, out.TermCount = smenaSumTypDB(userid, "t")
+			out.OnlineSum, out.OnlineCount = smenaSumTypDB(userid, "o")
+			out.KampSum, out.KampCount = smenaSumTypDB(userid, "k")
+			out.TotalSum, out.TotalCount = smenaSumDB(userid)
+			out.Coment = "ok"
+
+			t.ExecuteTemplate(w, "index", out)
 		}
-
-		var out smen
-		out.Date = date
-		out.Order = smenaDB()
-		out.NalSum, out.NalCount = smenaSumTypDB("n")
-		out.TermSum, out.TermCount = smenaSumTypDB("t")
-		out.OnlineSum, out.OnlineCount = smenaSumTypDB("o")
-		out.KampSum, out.KampCount = smenaSumTypDB("k")
-		out.TotalSum, out.TotalCount = smenaSumDB()
-		out.Coment = "ok"
-
-		t.ExecuteTemplate(w, "index", out)
 	}
-}
+} //2
 
 func openSmena(w http.ResponseWriter, r *http.Request) {
 	var ok int
@@ -1002,21 +1075,29 @@ func openSmena(w http.ResponseWriter, r *http.Request) {
 	if ok == 0 {
 		date = strings.Join(dateSl, ".")
 		fmt.Println("Открывается смена ", date)
-		dateToSetingsDB(date)
+		userCookie, err := r.Cookie("userid")
+		check(err)
+		userid := userCookie.Value
+		dateToUsersDB(userid, date)
+
 		defer smena(w, r)
 	} else {
 		defer errorDate(w, r)
 	}
-}
+} //2
 
 func addorder(w http.ResponseWriter, r *http.Request) {
 	in := r.FormValue("in")
 	if in != "" {
+		userCookie, err := r.Cookie("userid")
+		check(err)
+		userid := userCookie.Value
+		fmt.Print("userid=" + userid + " вводит ")
 		inSl := okOrder(in)
-		addOrderDB(inSl[1], inSl[2], inSl[0])
+		addOrderDB(userid, inSl[1], inSl[2], inSl[0])
 	}
 	defer smena(w, r)
-}
+} //2
 
 func delOrder(w http.ResponseWriter, r *http.Request) {
 	in := r.FormValue("in")
@@ -1040,42 +1121,48 @@ func corect(w http.ResponseWriter, r *http.Request) {
 
 	t, err := template.ParseFiles("./templates/corect.html",
 		"./templates/header.html", "./templates/footer.html")
-	if err != nil {
-		fmt.Println("ошибка template.ParseFiles")
-		fmt.Println(err.Error())
-	}
-
+	check(err)
+	userCookie, err := r.Cookie("userid")
+	userid := userCookie.Value
 	var out smen
-	out.Order = smenaDB()
-	out.NalSum, out.NalCount = smenaSumTypDB("n")
-	out.TermSum, out.TermCount = smenaSumTypDB("t")
-	out.OnlineSum, out.OnlineCount = smenaSumTypDB("o")
-	out.KampSum, out.KampCount = smenaSumTypDB("k")
-	out.TotalSum, out.TotalCount = smenaSumDB()
+	var sessionId int
+	out.UserName, sessionId = userDB(userid)
+	out.SessionId = fmt.Sprint(sessionId)
+	out.Order = smenaDB(userid)
+	out.NalSum, out.NalCount = smenaSumTypDB(userid, "n")
+	out.TermSum, out.TermCount = smenaSumTypDB(userid, "t")
+	out.OnlineSum, out.OnlineCount = smenaSumTypDB(userid, "o")
+	out.KampSum, out.KampCount = smenaSumTypDB(userid, "k")
+	out.TotalSum, out.TotalCount = smenaSumDB(userid)
 	out.Coment = "ok"
 
 	t.ExecuteTemplate(w, "corect", out)
 
-}
+} //2
 
 func sclose(w http.ResponseWriter, r *http.Request) {
 	// закрывает смену
-	// очищает таблицу smena
-	// удаляет дату из таблицы set
+	// удаляе заказы из таблицы orderssession для userid
+	// удаляет дату смены из таблицы users меняя на "close"
 	t, err := template.ParseFiles("./templates/close.html",
 		"./templates/header.html", "./templates/footer.html")
 	if err != nil {
 		fmt.Println("ошибка template.ParseFiles")
 		fmt.Println(err.Error())
 	}
-
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
 	var out smen
-	out.Date = dateFromSetingsDB()
-	out.NalSum, out.NalCount = smenaSumTypDB("n")
-	out.TermSum, out.TermCount = smenaSumTypDB("t")
-	out.OnlineSum, out.OnlineCount = smenaSumTypDB("o")
-	out.KampSum, out.KampCount = smenaSumTypDB("k")
-	out.TotalSum, out.TotalCount = smenaSumDB()
+	var sessionId int
+	out.UserName, sessionId = userDB(userid)
+	out.SessionId = fmt.Sprint(sessionId)
+	out.Date = dateOpenSessionDB(userid)
+	out.NalSum, out.NalCount = smenaSumTypDB(userid, "n")
+	out.TermSum, out.TermCount = smenaSumTypDB(userid, "t")
+	out.OnlineSum, out.OnlineCount = smenaSumTypDB(userid, "o")
+	out.KampSum, out.KampCount = smenaSumTypDB(userid, "k")
+	out.TotalSum, out.TotalCount = smenaSumDB(userid)
 	out.Coment = "ok"
 	count1, _ := strconv.Atoi(out.NalCount)
 	count2, _ := strconv.Atoi(out.TermCount)
@@ -1083,21 +1170,23 @@ func sclose(w http.ResponseWriter, r *http.Request) {
 	out.NalTermCount = fmt.Sprintf("%d", count)
 
 	t.ExecuteTemplate(w, "close", out)
-}
+} //2
 
 func scloseForm(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
 	kms := r.FormValue("km")
 	km, _ := strconv.Atoi(kms)
 	hs := r.FormValue("h")
 	h, _ := strconv.ParseFloat(hs, 64)
-	date := dateFromSetingsDB()
-	addKmhDB(date, km, h) // добавляет итоги смены в таблицу kmh
-	fmt.Println("Закрытие смены: ", km, "км, ", h, "ч")
-	//closeDateKmhDB() // изменяет в таблице setings поле date на "close"
-	dateToSetingsDB("close")
-	smenaTOordersDB(date)
+	date := dateOpenSessionDB(userid)
+	addSessionsDB(userid, date, km, h) // добавляет итоги смены в таблицу sessions
+	fmt.Println("userid="+userid, " Закрытие смены: ", km, "км, ", h, "ч")
+	smenaTOordersDB(userid, date)
+	dateToUsersDB(userid, "close")
 	defer smena(w, r)
-}
+} //2
 
 func report(w http.ResponseWriter, r *http.Request) {
 	var nalSum, termSum, onlineSum, kampSum, totalSum float64
@@ -1152,10 +1241,7 @@ func report(w http.ResponseWriter, r *http.Request) {
 func kmh(w http.ResponseWriter, r *http.Request) {
 	t, err := template.ParseFiles("./templates/kmh.html",
 		"./templates/header.html", "./templates/footer.html")
-	if err != nil {
-		fmt.Println("ошибка template.ParseFiles")
-		fmt.Println(err.Error())
-	}
+	check(err)
 
 	out := kmhDB(FuelCons, FuelPrice, ComDis, float64(ComPer/WorkDay))
 
@@ -1220,12 +1306,12 @@ func saveDb(w http.ResponseWriter, r *http.Request) {
 		out.Coment = "okSaveDB"
 		file.Close()
 	}
-	out.Order = smenaDB()
-	out.NalSum, out.NalCount = smenaSumTypDB("n")
-	out.TermSum, out.TermCount = smenaSumTypDB("t")
-	out.OnlineSum, out.OnlineCount = smenaSumTypDB("o")
-	out.KampSum, out.KampCount = smenaSumTypDB("k")
-	out.TotalSum, out.TotalCount = smenaSumDB()
+	out.Order = smenaDB("1") // todo прочитать из куков
+	out.NalSum, out.NalCount = smenaSumTypDB("1", "n")
+	out.TermSum, out.TermCount = smenaSumTypDB("1", "t")
+	out.OnlineSum, out.OnlineCount = smenaSumTypDB("1", "o")
+	out.KampSum, out.KampCount = smenaSumTypDB("1", "k")
+	out.TotalSum, out.TotalCount = smenaSumDB("1")
 
 	t.ExecuteTemplate(w, "corect", out)
 }
@@ -1238,11 +1324,90 @@ func errorDate(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err.Error())
 	}
 	var out close_smena
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	out.UserName, _ = userDB(userid)
 	now := time.Now()
 	out.Date = now.Format("02.01.06")
 	out.Ok = "err"
 	t.ExecuteTemplate(w, "closesmene", out)
-}
+} //2
+
+func userExit(w http.ResponseWriter, r *http.Request) {
+	c := &http.Cookie{
+		Name:     "userid",
+		Value:    "",
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+	}
+	http.SetCookie(w, c)
+	// todo сделать переход по ссылке, а не в функцию
+	w.Header().Set("Location", "/")
+	w.Header().Set("Cache-Control", "private, no-store, max-age=0, must-revalidate")
+	w.WriteHeader(303)
+} //2
+
+func veryfUser(w http.ResponseWriter, r *http.Request) {
+	name := r.FormValue("name")
+	inPas := r.FormValue("password")
+	fmt.Println("введено имя:", name, ", пароль: ", inPas)
+
+	userid, ok := veryfUserDB(name, inPas)
+	if !ok || name == "" || inPas == "" {
+		fmt.Println("не совпал пароль: ")
+		t, err := template.ParseFiles("templates/login.html",
+			"templates/header.html", "templates/footer.html")
+		check(err)
+		t.ExecuteTemplate(w, "login", "1")
+	} else {
+		// АВТОРИЗУЕМ ПОЛЬЗОВАТЕЛЯ
+		c := &http.Cookie{
+			Name:  "userid",
+			Value: userid,
+		}
+		http.SetCookie(w, c)
+		fmt.Println(name, "успешно залогинен c user_id =", userid)
+		w.Header().Set("Location", "/")
+		w.Header().Set("Cache-Control", "private, no-store, max-age=0, must-revalidate")
+		w.WriteHeader(303)
+	}
+} //2
+
+func addNewUser(w http.ResponseWriter, r *http.Request) {
+	name := r.FormValue("name")
+	inPas := r.FormValue("password")
+	fmt.Println("Создание нового пользователя!")
+	fmt.Println("login.html введено имя:", name, ", пароль: ", inPas)
+	userid, _ := veryfUserDB(name, inPas)
+	if userid != "0" {
+		fmt.Println("пользователь: ", name, " уже существует ")
+		t, err := template.ParseFiles("templates/login.html",
+			"templates/header.html", "templates/footer.html")
+		check(err)
+		err = t.ExecuteTemplate(w, "login", "2")
+		check(err)
+	} else if name == "" || inPas == "" {
+		fmt.Println("пустое имя или пароль")
+		t, err := template.ParseFiles("templates/login.html",
+			"templates/header.html", "templates/footer.html")
+		check(err)
+		t.ExecuteTemplate(w, "login", "3")
+
+	} else {
+		fmt.Println("создаем нового пользователя в БД")
+		userid := addUserDB(name, inPas)
+		c := &http.Cookie{
+			Name:  "userid",
+			Value: userid,
+		}
+		http.SetCookie(w, c)
+		fmt.Println(name, "успешно создан c user_id =", userid)
+		w.Header().Set("Location", "/")
+		w.Header().Set("Cache-Control", "private, no-store, max-age=0, must-revalidate")
+		w.WriteHeader(303)
+	}
+} //2
 
 func main() {
 	ver := versionDB()
@@ -1269,6 +1434,10 @@ func main() {
 	http.HandleFunc("/del_smen", delSmen)
 	http.HandleFunc("/edit_smen", editSmen)
 	http.HandleFunc("/save_db", saveDb)
+	http.HandleFunc("/user_exit", userExit)
+	http.HandleFunc("/verif_user", veryfUser)
+	http.HandleFunc("/add_new_user", addNewUser)
+
 	// todo сделать редактор основных переменных
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))

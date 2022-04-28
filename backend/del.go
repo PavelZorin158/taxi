@@ -113,10 +113,10 @@ func keyCook(w http.ResponseWriter, r *http.Request) {
 }
 
 func setCook(w http.ResponseWriter, r *http.Request) {
-	name := "Rick"
+	name := "1"
 	cName := http.Cookie{
-		Name:  "name", // имя куки
-		Value: name,   // значение
+		Name:  "userid", // имя куки
+		Value: name,     // значение
 	}
 	w.Header().Set("Set-Cookie", cName.String())
 

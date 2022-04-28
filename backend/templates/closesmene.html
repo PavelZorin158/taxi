@@ -7,6 +7,7 @@
     <h2 style="color: red">СМЕНА ЗАКРЫТА</h2>
 
     <br>
+    <h3 style="color:#a89d69">{{ .UserName }}&nbsp&nbsp<a href="/user_exit" class="btn btn-secondary">Выход</a></h3>
     <form action="/open_smena" method="post">
         <input autofocus type="text" name="date" id="date" value="{{ .Date }}" class="btn btn-close-white">&nbsp&nbsp<button class="btn btn-warning">Открыть</button>
     </form>

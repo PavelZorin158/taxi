@@ -1,0 +1,30 @@
+{{ define "login" }}
+
+{{ template "header" }}
+
+<main class="px-3">
+    <br>
+    <h1 class="cover-heading">Авторизация игрока</h1>
+    <br>
+    {{ if eq . "1" }}
+    <h3 style="color:#ff0000">Не соответствует ввод!</h3><br>
+    {{ else if eq . "2" }}
+    <h3 style="color:#ff0000">Такой пользователь уже соответствует!</h3><br>
+    {{ else if eq . "3" }}
+    <h3 style="color:#ff0000">Пустое имя или пароль!</h3><br>
+    {{ end }}
+
+    <form action="/verif_user" method="post">
+        <input autofocus type="text" name="name" id="name" placeholder="Введите имя" class="form-control"><br>
+        <input type="text" name="password" id="password" placeholder="Введите пароль" class="form-control"><br>
+        <button class="btn btn-warning">&nbsp; Войти &nbsp</button>&nbsp;&nbsp;&nbsp;&nbsp;
+        <input type="submit" value="Создать" title="NEW" formaction="/add_new_user" formmethod="post" class="btn btn-danger"/>
+    </form>
+    <br>
+
+
+</main>
+
+{{ template "footer" }}
+
+{{ end }}
