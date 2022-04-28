@@ -1,0 +1,52 @@
+{{ define "settings" }}
+
+{{ template "header" }}
+
+<main class="px-3" xmlns="http://www.w3.org/1999/html">
+    <br>
+    <h3 style="color:#a89d69">{{ .UserName }}</h3>
+    <h2>НАСТРОЙКИ</h2>
+
+    <br>
+
+    <form action="/set_settings" method="post">
+        <table align="center">
+            <tr><td align="right"><h4>Расход (л/100) &nbsp</h4></td>
+                <td align="left"><input type="text" name="fuelcons" id="fuelcons" size="5" value="{{ .FuelCons }}" autocomplete="off" ></td></tr>
+            <tr><td align="right"><h4>Цена топлива &nbsp</h4></td>
+                <td align="left"><input type="text" name="fuelprice" id="fuelprice" size="5" value="{{ .FuelPrice }}" autocomplete="off" ></td></tr>
+            <tr><td align="right"><h4>Раб.дней в месяце &nbsp</h4></td>
+                <td align="left"><input type="text" name="workday" id="workday" size="5" value="{{ .WorkDay }}" autocomplete="off" ></td></tr>
+            {{ if eq .UserName "Rick" }}
+            <tr><td align="right"><h4>Комис. диспетчера (%) &nbsp</h4></td>
+                <td align="left"><input type="text" name="comdis" id="comdis" size="5" value="{{ .ComDis }}" autocomplete="off" ></td></tr>
+            <tr><td align="right"><h4>Комиссия перевоз. (р) &nbsp</h4></td>
+                <td align="left"><input type="text" name="comper" id="comper" size="5" value="{{ .ComPer }}" autocomplete="off" ></td></tr>
+            <tr><td align="right"><h4>Комис. за терминалы (%) &nbsp</h4></td>
+                <td align="left"><input type="text" name="comperter" id="comperter" size="5" value="{{ .ComPerTer }}" autocomplete="off" ></td></tr>
+            <tr><td align="right"><h4>Комис. за онлайны (%) &nbsp</h4></td>
+                <td align="left"><input type="text" name="comperonline" id="comperonline" size="5" value="{{ .ComPerOnline }}" autocomplete="off" ></td></tr>
+            {{ else }}
+            <tr><td align="right"><h4>Комис. диспетчера (%) &nbsp</h4></td>
+                <td align="left"><h4>{{ .ComDis }}</h4><input type="hidden" name="comdis" id="comdis" value="{{ .ComDis }}"></td></tr>
+            <tr><td align="right"><h4>Комиссия перевоз. (р) &nbsp</h4></td>
+                <td align="left"><h4>{{ .ComPer }}</h4><input type="hidden" name="comper" id="comper" value="{{ .ComPer }}"></td></tr>
+            <tr><td align="right"><h4>Комис. за терминалы (%) &nbsp</h4></td>
+                <td align="left"><h4>{{ .ComPerTer }}</h4><input type="hidden" name="comperter" id="comperter" value="{{ .ComPerTer }}"></td></tr>
+            <tr><td align="right"><h4>Комис. за онлайны (%) &nbsp</h4></td>
+                <td align="left"><h4>{{ .ComPerOnline }}</h4><input type="hidden" name="comperonline" id="comperonline" value="{{ .ComPerOnline }}"></td></tr>
+
+            {{ end }}
+        </table>
+        <button class="btn btn-warning">&nbsp&nbspOk&nbsp&nbsp</button>
+    </form>
+    {{ if eq .UserName "Rick" }}
+    <p><h5 style="color:red">кнопочки для админа</h5></p>
+    {{ end }}
+    <br>
+
+</main>
+
+{{ template "footer" }}
+
+{{ end }}

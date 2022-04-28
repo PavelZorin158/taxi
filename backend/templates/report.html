@@ -4,8 +4,8 @@
 
 <main class="px-3" xmlns="http://www.w3.org/1999/html">
   <br>
+  <h3 style="color:#cfc482">{{ .UserName }}</h3>
   <h3 style="color:#a89d69">Отчет за {{ .Month }} месяц</h3>
-  <br>
   <h4 style="color:#a89d69">Выручка по кассе: {{ .TotalSum }}р. ({{ .TotalCount }} заказов)</h4>
   <hr>
 
@@ -89,7 +89,7 @@
 <hr>
   <table align="center">
     <tr><td align="left"> РАСХОДЫ :&nbsp</td><td align="right"> Диспетчер &nbsp</td><td align="left">{{.ComDis}} р</td></tr>
-    <tr><td></td><td align="right"> Перевоз &nbsp</td><td align="left">{{ .ComPer }} р</td></tr>
+    <tr><td></td><td align="right"> Перевозчик &nbsp</td><td align="left">{{ .ComPer }} р</td></tr>
     <tr><td></td><td align="right"><b> ИТОГО: &nbsp</b></td><td align="left"><b> {{ .ComSum }} р</b></td></tr>
     <tr><td></td><td align="right">------------------</td><td align="left">------------------</td></tr>
 

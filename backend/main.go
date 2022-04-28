@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -27,6 +28,17 @@ type order_smena_text struct {
 	Num   string // номер заказа
 	Order string // заказ преобразованный в строку для вывода в шаблон
 	Typ   string
+}
+
+type Sett struct {
+	UserName     string // имя пользователя
+	FuelCons     string // расход топлива
+	FuelPrice    string // цена топлива
+	WorkDay      string // рабочих дней
+	ComDis       string // комиссия диспетчера
+	ComPer       string // комиссия перевозчика
+	ComPerTer    string // комиссия перевозчика за терминалы
+	ComPerOnline string // комиссия перевозчика за онлайны
 }
 
 type close_smena struct {
@@ -50,6 +62,7 @@ type kmh_text struct {
 
 type rep struct {
 	// структура для передачи данных в шаблон report
+	UserName    string   // имя пользователя
 	Month       string   // отчетный месяц
 	NalSum      string   // сумма налички за месяц
 	NalCount    string   // количество наличных заказов за месяц
@@ -103,13 +116,13 @@ type smen struct {
 	Coment       string             // для коментария
 }
 
-var ComDis float64           // комиссия диспетчера (в %)
-var ComPer int               // комиссия перевозчика за свои услуги (в рублях)
-var ComPerTer float64        // комиссия перевозчика за обналичку терминалов (в %)
-var ComPerOnline float64     // комиссия перевозчика за обналичку онлайнов (в %)
-var FuelCons float64 = 12    // расход топлива (л/100км)
-var FuelPrice float64 = 1.24 // стоимость топлива (в рублях)
-var WorkDay int = 24         // количество рабочих дней - для расчета комисси за смену
+var ComDis float64       // комиссия диспетчера (в %)
+var ComPer int           // комиссия перевозчика за свои услуги (в рублях)
+var ComPerTer float64    // комиссия перевозчика за обналичку терминалов (в %)
+var ComPerOnline float64 // комиссия перевозчика за обналичку онлайнов (в %)
+//var FuelCons float64 = 12    // расход топлива (л/100км)
+//var FuelPrice float64 = 1.24 // стоимость топлива (в рублях)
+//var WorkDay int = 24         // количество рабочих дней - для расчета комисси за смену
 
 func check(e error) {
 	if e != nil {
@@ -121,7 +134,7 @@ func GetMd5(pas string) string {
 	h := md5.New()
 	h.Write([]byte(pas))
 	return hex.EncodeToString(h.Sum(nil))
-}
+} //2
 
 func versionDB() int {
 	// возвращает версию БД, 0 если база старая и нет поля версии, 1 если taxi.db нет
@@ -244,6 +257,25 @@ func transformDBto2() {
 	check(err)
 } //2
 
+func setSettingsDB(in Sett) {
+	// вносит изменения в БД, в настройки пользователя и комиссии
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+
+	records := `UPDATE settings SET comdis = ?, comper = ?, comperter = ?, comperonline = ?`
+	query, err := db.Prepare(records)
+	check(err)
+	_, err = query.Exec(in.ComDis, in.ComPer, in.ComPerTer, in.ComPerOnline)
+	check(err)
+
+	records = `UPDATE users SET fuelcons = ?, fuelprice = ?, workday = ? WHERE users_id = ?`
+	query, err = db.Prepare(records)
+	check(err)
+	_, err = query.Exec(in.FuelCons, in.FuelPrice, in.WorkDay, in.UserName) // здесь в in.UserName - userid
+	check(err)
+}
+
 func createTablesDB() {
 	// создание таблицы и файла БД, если их нет
 
@@ -347,22 +379,15 @@ func createTablesDB() {
 func loadSettingsDB() {
 	// читает основные переменные из БД
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 
 	record, err := db.Query("SELECT comdis, comper, comperter, comperonline FROM settings")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer record.Close()
 	for record.Next() {
 		record.Scan(&ComDis, &ComPer, &ComPerTer, &ComPerOnline)
-		if err != nil {
-			fmt.Println("Ошибка record.Scan")
-			panic(err)
-		}
+		check(err)
 	}
 } //2
 
@@ -378,6 +403,41 @@ func mySqlExec(db *sql.DB, s string) {
 		log.Fatal(err)
 	}
 	query.Close()
+} //2
+
+func setDB() (string, string, string, string) {
+	// возвращает настройки комиссий из БД таблицы settings
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+
+	record, err := db.Query("SELECT comdis, comper, comperter, comperonline FROM settings")
+	check(err)
+	defer record.Close()
+	var comDis, comPer, comPerTer, comPerOnline string
+	for record.Next() {
+		record.Scan(&comDis, &comPer, &comPerTer, &comPerOnline)
+		check(err)
+	}
+	return comDis, comPer, comPerTer, comPerOnline
+} //2
+
+func userSettingsDB(userid string) (float64, float64, int) {
+	// возвращает расход, цену топлива и колич.рабочих дней в месяце пользователя
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+
+	record, err := db.Query("SELECT fuelcons, fuelprice, workday FROM users WHERE users_id = ?", userid)
+	check(err)
+	defer record.Close()
+	var fuelCons, fuelPrise float64
+	var workday int
+	for record.Next() {
+		record.Scan(&fuelCons, &fuelPrise, &workday)
+		check(err)
+	}
+	return fuelCons, fuelPrise, workday
 } //2
 
 func userDB(userIdString string) (string, int) {
@@ -427,25 +487,31 @@ func smenaDB(userid string) []order_smena_text {
 	return orders
 } //2
 
-func kmhDB(fuel float64, fuelPrice float64, comDis float64, comPer float64) []kmh_text {
+func kmhDB(userid string) []kmh_text {
+	//func kmhDB(fuel float64, fuelPrice float64, comDis float64, comPer float64) []kmh_text {
 	// принимает расход топлива в л/100км (10.5) fuel
 	// 			стоимость топлива в руб (1.2) fuelPrice
 	// 			комиссию дисп в % (20) comDis
 	//			комиссию перевозчика в руб за смену (7.7) comPer
-	// возвращает срез смен из таблицы kmh
+	// возвращает срез смен из таблицы sessions со списком смен для пользователя userid
+
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 
-	record, err := db.Query("SELECT kmh_id, date, km , h, price, tea, count FROM kmh INNER JOIN" +
-		" (SELECT date AS orders_date, sum(price) AS price, sum(tea) AS tea, count() AS count FROM orders" +
-		" GROUP BY date) ON date = orders_date ORDER BY date")
-	if err != nil {
-		log.Fatal(err)
-	}
+	var fuel, fuelPrice, comDis, comPer, workDay float64
+	record, err := db.Query("SELECT fuelcons, fuelprice, comdis, comper, workday FROM users, settings WHERE users_id = ?", userid)
+	check(err)
 	defer record.Close()
+	for record.Next() {
+		record.Scan(&fuel, &fuelPrice, &comDis, &comPer, &workDay)
+		check(err)
+	}
+	comPer = comPer / workDay
+	comPer = math.Round(comPer*10) / 10
+
+	record, err = db.Query("SELECT session_id, date, km , h, price, tea, count FROM sessions INNER JOIN (SELECT session_id AS orders_sessionid, sum(price) AS price, sum(tea) AS tea, count() AS count FROM orders WHERE user_id = ? GROUP BY session_id) ON sessions.session_id = orders_sessionid ORDER BY date", userid)
+	check(err)
 
 	smens := []kmh_text{}
 	var num, km, count int
@@ -454,10 +520,7 @@ func kmhDB(fuel float64, fuelPrice float64, comDis float64, comPer float64) []km
 	smen := kmh_text{}
 	for record.Next() {
 		record.Scan(&num, &date, &km, &h, &price, &tea, &count)
-		if err != nil {
-			fmt.Println("Ошибка record.Scan")
-			panic(err)
-		}
+		check(err)
 
 		smen.Num = fmt.Sprintf("%d", num)
 		smen.Date = fmt.Sprintf("%s", date)
@@ -473,7 +536,7 @@ func kmhDB(fuel float64, fuelPrice float64, comDis float64, comPer float64) []km
 		smens = append(smens, smen)
 	}
 	return smens
-}
+} //2
 
 func indexNumDB() {
 	// нумерует заказы в таблице smena по порядку
@@ -665,45 +728,31 @@ func addOrderDB(userid string, price string, tea string, typ string) {
 	check(err)
 } //2
 
-func editOrderDB(num string, price string, tea string, typ string) {
-	// изменяет заказ номер num в БД в таблице smena
+func editOrderDB(userid string, osId string, price string, tea string, typ string) {
+	// изменяет заказ номер num в БД в таблице orderssession
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 
-	records := `UPDATE smena SET price = ?, tea = ?, typ = ? WHERE num = ?`
+	records := `UPDATE orderssession SET price = ?, tea = ?, type = ? WHERE os_id = ? AND user_id = ?`
 	query, err := db.Prepare(records)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = query.Exec(price, tea, typ, num)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
+	check(err)
+	_, err = query.Exec(price, tea, typ, osId, userid)
+	check(err)
+} //2
 
-func delOrderDB(n int) {
-	// удаление заказа n
+func delOrderDB(userid string, osId int) {
+	// удаление заказа n для userid из таблицы orderssession
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 
-	records := `DELETE FROM smena WHERE num = ?`
+	records := `DELETE FROM orderssession WHERE os_id = ? AND user_id = ?`
 	query, err := db.Prepare(records)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = query.Exec(n)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	indexNumDB()
-}
+	check(err)
+	_, err = query.Exec(osId, userid)
+	check(err)
+} //2
 
 func dateOpenSessionDB(userid string) string {
 	// возвращает дату открытой смены из таблицы users по userid. "close" если закрыта
@@ -792,52 +841,39 @@ func smenaTOordersDB(userid string, date string) {
 	check(err)
 } //2
 
-func distanceHDB(month string) (int, float64, int) {
-	// возвращает пробег, время и количество смен за месяц mounth
+func distanceHDB(userid string, month string) (int, float64, int) {
+	// возвращает пробег, время и количество смен за месяц mounth для userid
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 	monthSQL := fmt.Sprintf("__.%s.22", month)
-	record, err := db.Query("SELECT sum(km), sum(h), count() FROM kmh WHERE date LIKE ?", monthSQL)
-	if err != nil {
-		log.Fatal(err)
-	}
+	record, err := db.Query("SELECT sum(km), sum(h), count() FROM sessions WHERE date LIKE ? AND user_id = ?", monthSQL, userid)
+	check(err)
 	defer record.Close()
 	var h float64 // для суммы часов
 	var km int    // для суммы километров
 	var count int // для количества смен
 	for record.Next() {
 		record.Scan(&km, &h, &count)
-		if err != nil {
-			fmt.Println("Ошибка record.Scan")
-			log.Fatal(err)
-		}
+		check(err)
 	}
 	return km, h, count
-}
+} //2
 
-func reportDB(month string, typ string) (float64, int, []string) {
+func reportDB(month string, userid string, typ string) (float64, int, []string) {
 	// возвращает сумму заказов за месяц month по типу typ в текстовом виде в sum
-	// количество в cont и список заказов в orders
+	// количество в cont и список заказов в orders для userid
 	var record *sql.Rows
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 	monthSQL := fmt.Sprintf("__.%s.22", month)
 	if typ == "all" {
-		record, err = db.Query("SELECT sum(price), count() FROM orders")
-		if err != nil {
-			log.Fatal(err)
-		}
+		record, err = db.Query("SELECT sum(price), count() FROM sessions INNER JOIN orders ON sessions.session_id = orders.session_id WHERE sessions.date LIKE ? AND sessions.user_id = ?", monthSQL, userid)
+		check(err)
 	} else {
-		record, err = db.Query("SELECT sum(price), count() FROM orders WHERE typ = ? AND date LIKE ?", typ, monthSQL)
-		if err != nil {
-			log.Fatal(err)
-		}
+		record, err = db.Query("SELECT sum(price), count() FROM sessions INNER JOIN orders ON sessions.session_id = orders.session_id WHERE sessions.date LIKE ? AND sessions.user_id = ? AND orders.type = ?", monthSQL, userid, typ)
+		check(err)
 	}
 	defer record.Close()
 	var sum float64 // для суммы всех заказов типа typ
@@ -849,94 +885,61 @@ func reportDB(month string, typ string) (float64, int, []string) {
 			panic(err)
 		}
 	}
-
-	record, err = db.Query("SELECT date, price, tea FROM orders WHERE typ = ? AND date LIKE ? ORDER BY date", typ, monthSQL)
-	if err != nil {
-		log.Fatal(err)
-	}
-	var date, s string
-	var price, tea float64
-	var n int
 	var orders []string
-	for record.Next() {
-		record.Scan(&date, &price, &tea)
-		if err != nil {
-			fmt.Println("Ошибка record.Scan")
-			panic(err)
-		}
-		n++
-		s = fmt.Sprintf("%d.  %s  %.2fр %.2fр", n, date, price, tea)
-		orders = append(orders, s)
-	}
+	if typ != "all" {
+		record, err = db.Query("SELECT date, price, tea FROM sessions INNER JOIN orders ON sessions.session_id = orders.session_id WHERE sessions.date LIKE ? AND orders.type = ? AND sessions.user_id = ? ORDER BY sessions.date", monthSQL, typ, userid)
+		check(err)
+		var date, s string
+		var price, tea float64
+		var n int
 
+		for record.Next() {
+			record.Scan(&date, &price, &tea)
+			if err != nil {
+				fmt.Println("Ошибка record.Scan")
+				panic(err)
+			}
+			n++
+			s = fmt.Sprintf("%d.  %s  %.2fр %.2fр", n, date, price, tea)
+			orders = append(orders, s)
+		}
+	}
 	return sum, count, orders
-}
+} //2
 
-func delSmenDB(n int) {
-	// удаление смены n из БД
-	var date string
+func delSmenDB(userid string, sessionId int) {
+	// удаление смены sessionId для userid из БД sessions
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 
-	// читаем дату смены n
-	record, err := db.Query("SELECT date FROM kmh WHERE kmh_id = ?", n)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer record.Close()
-	for record.Next() {
-		record.Scan(&date)
-		if err != nil {
-			fmt.Println("Ошибка record.Scan")
-			panic(err)
-		}
-	}
-
-	// удаляем смену n из таблицы kmh
-	records := `DELETE FROM kmh WHERE kmh_id = ?`
+	records := `DELETE FROM sessions WHERE session_id = ? AND user_id = ?`
 	query, err := db.Prepare(records)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = query.Exec(n)
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
+	_, err = query.Exec(sessionId, userid)
+	check(err)
 
-	// удаляем заказы с датой из таблицы orders
-	records = `DELETE FROM orders WHERE date = ?`
+	// удаляем заказы с sessionId и userid из таблицы orders
+	records = `DELETE FROM orders WHERE session_id = ? AND user_id = ?`
 	query, err = db.Prepare(records)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = query.Exec(date)
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
+	_, err = query.Exec(sessionId, userid)
+	check(err)
 	//indexNumSmenDB()
-}
+} //2
 
-func editSmenDB(num string, km string, h string) {
-	// изменяет смену номер num в БД в таблице kmh
+func editSmenDB(userid string, sessionId string, km string, h string) {
+	// изменяет смену номер sessionId в БД в таблице sessions
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 
-	records := `UPDATE kmh SET km = ?, h = ? WHERE kmh_id = ?`
+	records := `UPDATE sessions SET km = ?, h = ? WHERE session_id = ? AND user_id = ?`
 	query, err := db.Prepare(records)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = query.Exec(km, h, num)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
+	check(err)
+	_, err = query.Exec(km, h, sessionId, userid)
+	check(err)
+} //2
 
 func okOrder(in string) []string {
 	// из строки введенной в форме выдает правильный срез для добавления заказа
@@ -994,7 +997,7 @@ func okOrder(in string) []string {
 		inSl[2] = fmt.Sprintf("%.2f", i)
 	}
 	return inSl
-}
+} //2
 
 func smena(w http.ResponseWriter, r *http.Request) {
 	userCookie, err := r.Cookie("userid")
@@ -1100,44 +1103,62 @@ func addorder(w http.ResponseWriter, r *http.Request) {
 } //2
 
 func delOrder(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
 	in := r.FormValue("in")
-	i, _ := strconv.Atoi(in)
-	delOrderDB(i)
+	i, err := strconv.Atoi(in)
+	if err == nil {
+		delOrderDB(userid, i)
+	}
 	defer corect(w, r)
-}
+} //2
 
 func editOrder(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
 	// номер редактируемого заказа
 	num := r.FormValue("num")
 	// новые данные заказа
 	edit := r.FormValue("edit")
 	inSl := okOrder(edit)
-	editOrderDB(num, inSl[1], inSl[2], inSl[0])
+	editOrderDB(userid, num, inSl[1], inSl[2], inSl[0])
 
 	defer corect(w, r)
-}
+} //2
 
 func corect(w http.ResponseWriter, r *http.Request) {
-
-	t, err := template.ParseFiles("./templates/corect.html",
-		"./templates/header.html", "./templates/footer.html")
-	check(err)
 	userCookie, err := r.Cookie("userid")
-	userid := userCookie.Value
-	var out smen
-	var sessionId int
-	out.UserName, sessionId = userDB(userid)
-	out.SessionId = fmt.Sprint(sessionId)
-	out.Order = smenaDB(userid)
-	out.NalSum, out.NalCount = smenaSumTypDB(userid, "n")
-	out.TermSum, out.TermCount = smenaSumTypDB(userid, "t")
-	out.OnlineSum, out.OnlineCount = smenaSumTypDB(userid, "o")
-	out.KampSum, out.KampCount = smenaSumTypDB(userid, "k")
-	out.TotalSum, out.TotalCount = smenaSumDB(userid)
-	out.Coment = "ok"
+	if err != nil {
+		// нет кука userid, надо залогинится
+		// переходим на страницу логина
+		t, err := template.ParseFiles("templates/login.html",
+			"templates/header.html", "templates/footer.html")
+		check(err)
+		err = t.ExecuteTemplate(w, "login", "0")
+		check(err)
+	} else {
+		// в куках есть userid
+		userid := userCookie.Value
+		t, err := template.ParseFiles("./templates/corect.html",
+			"./templates/header.html", "./templates/footer.html")
+		check(err)
 
-	t.ExecuteTemplate(w, "corect", out)
+		var out smen
+		var sessionId int
+		out.UserName, sessionId = userDB(userid)
+		out.SessionId = fmt.Sprint(sessionId)
+		out.Order = smenaDB(userid)
+		out.NalSum, out.NalCount = smenaSumTypDB(userid, "n")
+		out.TermSum, out.TermCount = smenaSumTypDB(userid, "t")
+		out.OnlineSum, out.OnlineCount = smenaSumTypDB(userid, "o")
+		out.KampSum, out.KampCount = smenaSumTypDB(userid, "k")
+		out.TotalSum, out.TotalCount = smenaSumDB(userid)
+		out.Coment = "ok"
 
+		t.ExecuteTemplate(w, "corect", out)
+	}
 } //2
 
 func sclose(w http.ResponseWriter, r *http.Request) {
@@ -1189,85 +1210,120 @@ func scloseForm(w http.ResponseWriter, r *http.Request) {
 } //2
 
 func report(w http.ResponseWriter, r *http.Request) {
-	var nalSum, termSum, onlineSum, kampSum, totalSum float64
-	var nalCount, termCount, onlineCount, kampCount, totalCount int
-	t, err := template.ParseFiles("./templates/report.html",
-		"./templates/header.html", "./templates/footer.html")
+	userCookie, err := r.Cookie("userid")
 	if err != nil {
-		fmt.Println("ошибка template.ParseFiles")
-		fmt.Println(err.Error())
+		// нет кука userid, надо залогинится
+		// переходим на страницу логина
+		t, err := template.ParseFiles("templates/login.html",
+			"templates/header.html", "templates/footer.html")
+		check(err)
+		err = t.ExecuteTemplate(w, "login", "0")
+		check(err)
+	} else {
+		// в куках есть userid
+		userid := userCookie.Value
+		var nalSum, termSum, onlineSum, kampSum, totalSum float64
+		var nalCount, termCount, onlineCount, kampCount, totalCount int
+		t, err := template.ParseFiles("./templates/report.html",
+			"./templates/header.html", "./templates/footer.html")
+		if err != nil {
+			fmt.Println("ошибка template.ParseFiles")
+			fmt.Println(err.Error())
+		}
+		out := rep{}
+		out.Month = "04" //todo сделать ввод отчетного месяца
+		out.UserName, _ = userDB(userid)
+		nalSum, nalCount, out.Nal = reportDB(out.Month, userid, "n")
+		out.NalSum = fmt.Sprintf("%.2f", nalSum)
+		out.NalCount = fmt.Sprintf("%d", nalCount)
+		termSum, termCount, out.Term = reportDB(out.Month, userid, "t")
+		out.TermSum = fmt.Sprintf("%.2f", termSum)
+		out.TermCount = fmt.Sprintf("%d", termCount)
+		onlineSum, onlineCount, out.Online = reportDB(out.Month, userid, "o")
+		out.OnlineSum = fmt.Sprintf("%.2f", onlineSum)
+		out.OnlineCount = fmt.Sprintf("%d", onlineCount)
+		kampSum, kampCount, out.Kamp = reportDB(out.Month, userid, "k")
+		out.KampSum = fmt.Sprintf("%.2f", kampSum)
+		out.KampCount = fmt.Sprintf("%d", kampCount)
+		totalSum, totalCount, _ = reportDB(out.Month, userid, "all")
+		out.TotalSum = fmt.Sprintf("%.2f", totalSum)
+		out.TotalCount = fmt.Sprintf("%d", totalCount)
+		comDisR := (nalSum + termSum + onlineSum) / 100 * ComDis
+		out.ComDis = fmt.Sprintf("%.2f", comDisR)
+		out.ComPer = fmt.Sprintf("%d", ComPer)
+		comSum := comDisR + float64(ComPer)
+		out.ComSum = fmt.Sprintf("%.2f", comSum)
+		payTerm := termSum / 100 * (100 - ComPerTer)
+		out.PayTerm = fmt.Sprintf("%.2f", payTerm)
+		payOnline := onlineSum / 100 * (100 - ComPerOnline)
+		out.PayOnline = fmt.Sprintf("%.2f", payOnline)
+		paySum := payTerm + payOnline
+		out.PaySum = fmt.Sprintf("%.2f", paySum)
+		out.Balance = fmt.Sprintf("%.2f", comSum-paySum)
+		distance, hours, count := distanceHDB(userid, out.Month)
+		out.Distance = fmt.Sprintf("%.d", distance)
+		out.Hours = fmt.Sprintf("%.2f", hours)
+		out.Count = fmt.Sprintf("%.d", count)
+		fuelCons, fuelPrise, _ := userSettingsDB(userid)
+		payDist := fuelCons / 100 * float64(distance) * fuelPrise
+		out.PayDist = fmt.Sprintf("%.0f", payDist)
+		salary := totalSum - payDist - comSum
+		out.Salary = fmt.Sprintf("%.0f", salary)
+		out.SalaryH = fmt.Sprintf("%.1f", salary/hours)
+		t.ExecuteTemplate(w, "report", out)
 	}
-	out := rep{}
-	out.Month = "04" //todo сделать ввод отчетного месяца
-	nalSum, nalCount, out.Nal = reportDB(out.Month, "n")
-	out.NalSum = fmt.Sprintf("%.2f", nalSum)
-	out.NalCount = fmt.Sprintf("%d", nalCount)
-	termSum, termCount, out.Term = reportDB(out.Month, "t")
-	out.TermSum = fmt.Sprintf("%.2f", termSum)
-	out.TermCount = fmt.Sprintf("%d", termCount)
-	onlineSum, onlineCount, out.Online = reportDB(out.Month, "o")
-	out.OnlineSum = fmt.Sprintf("%.2f", onlineSum)
-	out.OnlineCount = fmt.Sprintf("%d", onlineCount)
-	kampSum, kampCount, out.Kamp = reportDB(out.Month, "k")
-	out.KampSum = fmt.Sprintf("%.2f", kampSum)
-	out.KampCount = fmt.Sprintf("%d", kampCount)
-	totalSum, totalCount, _ = reportDB(out.Month, "all")
-	out.TotalSum = fmt.Sprintf("%.2f", totalSum)
-	out.TotalCount = fmt.Sprintf("%d", totalCount)
-	comDisR := (nalSum + termSum + onlineSum) / 100 * ComDis
-	out.ComDis = fmt.Sprintf("%.2f", comDisR)
-	out.ComPer = fmt.Sprintf("%d", ComPer)
-	comSum := comDisR + float64(ComPer)
-	out.ComSum = fmt.Sprintf("%.2f", comSum)
-	payTerm := termSum / 100 * (100 - ComPerTer)
-	out.PayTerm = fmt.Sprintf("%.2f", payTerm)
-	payOnline := onlineSum / 100 * (100 - ComPerOnline)
-	out.PayOnline = fmt.Sprintf("%.2f", payOnline)
-	paySum := payTerm + payOnline
-	out.PaySum = fmt.Sprintf("%.2f", paySum)
-	out.Balance = fmt.Sprintf("%.2f", comSum-paySum)
-	distance, hours, count := distanceHDB(out.Month)
-	out.Distance = fmt.Sprintf("%.d", distance)
-	out.Hours = fmt.Sprintf("%.2f", hours)
-	out.Count = fmt.Sprintf("%.d", count)
-	payDist := FuelCons / 100 * float64(distance) * FuelPrice
-	out.PayDist = fmt.Sprintf("%.0f", payDist)
-	salary := totalSum - payDist - comSum
-	out.Salary = fmt.Sprintf("%.0f", salary)
-	out.SalaryH = fmt.Sprintf("%.1f", salary/hours)
-	t.ExecuteTemplate(w, "report", out)
-}
+} //2
 
 func kmh(w http.ResponseWriter, r *http.Request) {
 	t, err := template.ParseFiles("./templates/kmh.html",
 		"./templates/header.html", "./templates/footer.html")
 	check(err)
-
-	out := kmhDB(FuelCons, FuelPrice, ComDis, float64(ComPer/WorkDay))
-
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	//out := kmhDB(FuelCons, FuelPrice, ComDis, float64(ComPer/WorkDay))
+	out := kmhDB(userid)
 	t.ExecuteTemplate(w, "kmh", out)
-}
+} //2
 
 func delSmen(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
 	in := r.FormValue("in")
-	i, _ := strconv.Atoi(in)
-	delSmenDB(i)
-
+	i, err := strconv.Atoi(in)
+	if err == nil {
+		delSmenDB(userid, i)
+	}
 	defer kmh(w, r)
-}
+} //2
 
 func editSmen(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	var er int
 	// номер редактируемой смены
 	num := r.FormValue("num")
-	//num, _ := strconv.Atoi(in)
 	// новый километраж за смену
 	km := r.FormValue("km")
+	i, err := strconv.Atoi(km)
+	if err != nil {
+		er++
+		i++
+	}
 	// новое время смены
 	h := r.FormValue("h")
-	editSmenDB(num, km, h)
-
+	fl, err := strconv.ParseFloat(h, 64)
+	if err != nil {
+		er++
+		fl++
+	}
+	if er == 0 {
+		editSmenDB(userid, num, km, h)
+	}
 	defer kmh(w, r)
-}
+} //2
 
 func saveDb(w http.ResponseWriter, r *http.Request) {
 	//todo сделать проверку пользователя для загрузки БД
@@ -1319,10 +1375,7 @@ func saveDb(w http.ResponseWriter, r *http.Request) {
 func errorDate(w http.ResponseWriter, r *http.Request) {
 	t, err := template.ParseFiles("./templates/closesmene.html",
 		"./templates/header.html", "./templates/footer.html")
-	if err != nil {
-		fmt.Println("ошибка template.ParseFiles")
-		fmt.Println(err.Error())
-	}
+	check(err)
 	var out close_smena
 	userCookie, err := r.Cookie("userid")
 	check(err)
@@ -1342,7 +1395,6 @@ func userExit(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	}
 	http.SetCookie(w, c)
-	// todo сделать переход по ссылке, а не в функцию
 	w.Header().Set("Location", "/")
 	w.Header().Set("Cache-Control", "private, no-store, max-age=0, must-revalidate")
 	w.WriteHeader(303)
@@ -1409,6 +1461,41 @@ func addNewUser(w http.ResponseWriter, r *http.Request) {
 	}
 } //2
 
+func settings(w http.ResponseWriter, r *http.Request) {
+	t, err := template.ParseFiles("./templates/settings.html",
+		"./templates/header.html", "./templates/footer.html")
+	check(err)
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	var out Sett
+	out.UserName, _ = userDB(userid)
+	fuelCons, fuelPrice, workDay := userSettingsDB(userid)
+	out.FuelCons = fmt.Sprint(fuelCons)
+	out.FuelPrice = fmt.Sprint(fuelPrice)
+	out.WorkDay = fmt.Sprint(workDay)
+	out.ComDis, out.ComPer, out.ComPerTer, out.ComPerOnline = setDB()
+	t.ExecuteTemplate(w, "settings", out)
+} //2
+
+func setSettings(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	var in Sett
+	in.UserName = userid // здесь в in.UserName - userid
+	in.FuelCons = r.FormValue("fuelcons")
+	in.FuelPrice = r.FormValue("fuelprice")
+	in.WorkDay = r.FormValue("workday")
+	in.ComDis = r.FormValue("comdis")
+	in.ComPer = r.FormValue("comper")
+	in.ComPerTer = r.FormValue("comperter")
+	in.ComPerOnline = r.FormValue("comperonline")
+	fmt.Println(in)
+	setSettingsDB(in)
+	defer settings(w, r)
+} //2
+
 func main() {
 	ver := versionDB()
 	fmt.Println("версия БД: ", ver)
@@ -1437,8 +1524,8 @@ func main() {
 	http.HandleFunc("/user_exit", userExit)
 	http.HandleFunc("/verif_user", veryfUser)
 	http.HandleFunc("/add_new_user", addNewUser)
-
-	// todo сделать редактор основных переменных
+	http.HandleFunc("/settings", settings)
+	http.HandleFunc("/set_settings", setSettings)
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	http.Handle("/dir_db/", http.StripPrefix("/dir_db/", http.FileServer(http.Dir("../dir_db/"))))

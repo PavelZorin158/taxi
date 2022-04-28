@@ -48,10 +48,12 @@
     </form>
     <br>
 
+    {{ if eq .UserName "Rick" }}
     <form enctype="multipart/form-data" action="/save_db" method="post">
         <p><input type="file" name="file" id="file"><input type="submit" value="Загрузить БД" class="btn btn-secondary">&nbsp
             <a  href="dir_db/taxi.db" download class="btn btn-secondary">Скачать БД</a></p>
     </form>
+    {{ end }}
 
     {{ if eq .Coment "errSaveDB" }}
         <p><h4 style="color:red">Не правильное имя для загрузки taxi.db</h4></p>
