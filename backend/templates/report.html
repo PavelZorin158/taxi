@@ -5,7 +5,8 @@
 <main class="px-3" xmlns="http://www.w3.org/1999/html">
   <br>
   <h3 style="color:#cfc482">{{ .UserName }}</h3>
-  <h3 style="color:#a89d69">Отчет за {{ .Month }} месяц</h3>
+  <h3 style="color:#a89d69"><a  href="/report_minus" class="btn btn-secondary">-</a>
+    Отчет за {{ .Month }} месяц&nbsp<a  href="/report_plus" class="btn btn-secondary">+</a></h3>
   <h4 style="color:#a89d69">Выручка по кассе: {{ .TotalSum }}р. ({{ .TotalCount }} заказов)</h4>
   <hr>
 

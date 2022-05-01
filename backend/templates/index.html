@@ -10,8 +10,8 @@
     <h3>{{ .NalSum }} <span style="color:#ff6600"> {{ .TermSum }} </span>
         <span style="color:#09b900"> {{ .OnlineSum }} </span>
         <span style="color:#9900ff"> {{ .KampSum }} </span></h3>
-    <div class="alert-danger">
-
+<hr size="4">
+    <div>
         <table align="center">
 
         {{ range .Order }}
@@ -22,7 +22,7 @@
         <h4 style="color:#09b900">{{ .Order }}</h4>
         {{ end }}
         {{ if eq .Typ "n" }}
-        <h4 style="color:#252930">{{ .Order }}</h4>
+        <h4 style="color:#c7c7c7">{{ .Order }}</h4>
         {{ end }}
         {{ if eq .Typ "t" }}
         <h4 style="color:#ff6600">{{ .Order }}</h4>
@@ -38,8 +38,7 @@
         {{ end }}
         </table>
     </div>
-
-        <br>
+<hr size="4">
     <form action="/addorder" method="post">
         <input autofocus type="text" name="in" id="in" placeholder="о 5.3 6" size="10" autocomplete="off" class="btn btn-close-white">&nbsp
         <button class="btn btn-warning">Ok</button>

@@ -5,10 +5,10 @@
 <main class="px-3" xmlns="http://www.w3.org/1999/html">
     <br>
     <h3 style="color:#a89d69">{{ .UserName }}&nbsp&nbsp#{{ .SessionId }}</h3>
-    <h2 style="color:#b1b1b1"><a  href="/corect" class="btn btn-secondary">Заказы</a>
-        Редактирование заказов <a  href="/kmh" class="btn btn-secondary">Смены</a></h2>
-
-    <div class="alert-danger">
+    <h3 style="color:#b1b1b1"><a  href="/corect" class="btn btn-warning">Заказы</a>
+        Редактирование заказов <a  href="/kmh" class="btn btn-warning">Смены</a></h3>
+    <hr size="4">
+    <div>
         <table align="center">
             {{ range .Order }}
             <tr>
@@ -18,7 +18,7 @@
                     <h4 style="color:#09b900">{{ .Order }}</h4>
                     {{ end }}
                     {{ if eq .Typ "n" }}
-                    <h4 style="color:#252930">{{ .Order }}</h4>
+                    <h4 style="color:#cdcdcd">{{ .Order }}</h4>
                     {{ end }}
                     {{ if eq .Typ "t" }}
                     <h4 style="color:#ff6600">{{ .Order }}</h4>
@@ -34,8 +34,7 @@
             {{ end }}
         </table>
     </div>
-
-    <br>
+    <hr size="4">
     <form action="/del_order" method="post">
         <input autofocus type="text" name="in" id="in" placeholder="номер заказа" autocomplete="off" maxlength="2" size="9" class="btn btn-close-white">&nbsp
         <button class="btn btn-danger">Удалить</button>

@@ -116,13 +116,11 @@ type smen struct {
 	Coment       string             // для коментария
 }
 
-var ComDis float64       // комиссия диспетчера (в %)
-var ComPer int           // комиссия перевозчика за свои услуги (в рублях)
-var ComPerTer float64    // комиссия перевозчика за обналичку терминалов (в %)
-var ComPerOnline float64 // комиссия перевозчика за обналичку онлайнов (в %)
-//var FuelCons float64 = 12    // расход топлива (л/100км)
-//var FuelPrice float64 = 1.24 // стоимость топлива (в рублях)
-//var WorkDay int = 24         // количество рабочих дней - для расчета комисси за смену
+var ComDis float64              // комиссия диспетчера (в %)
+var ComPer int                  // комиссия перевозчика за свои услуги (в рублях)
+var ComPerTer float64           // комиссия перевозчика за обналичку терминалов (в %)
+var ComPerOnline float64        // комиссия перевозчика за обналичку онлайнов (в %)
+var Month = map[string]string{} // key - userid, value - отчетный месяц
 
 func check(e error) {
 	if e != nil {
@@ -378,6 +376,9 @@ func createTablesDB() {
 
 func loadSettingsDB() {
 	// читает основные переменные из БД
+	now := time.Now()
+	month := now.Format("01")
+	var userid string
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
 	check(err)
 	defer db.Close()
@@ -388,6 +389,16 @@ func loadSettingsDB() {
 	for record.Next() {
 		record.Scan(&ComDis, &ComPer, &ComPerTer, &ComPerOnline)
 		check(err)
+	}
+
+	// создает map с ключами users_id и значением у всех номер текущего месяца в string для использования в отчетах
+	record, err = db.Query("SELECT users_id FROM users")
+	check(err)
+	defer record.Close()
+	for record.Next() {
+		record.Scan(&userid)
+		check(err)
+		Month[userid] = month
 	}
 } //2
 
@@ -488,13 +499,9 @@ func smenaDB(userid string) []order_smena_text {
 } //2
 
 func kmhDB(userid string) []kmh_text {
-	//func kmhDB(fuel float64, fuelPrice float64, comDis float64, comPer float64) []kmh_text {
-	// принимает расход топлива в л/100км (10.5) fuel
-	// 			стоимость топлива в руб (1.2) fuelPrice
-	// 			комиссию дисп в % (20) comDis
-	//			комиссию перевозчика в руб за смену (7.7) comPer
 	// возвращает срез смен из таблицы sessions со списком смен для пользователя userid
-
+	month := Month[userid]
+	monthSQL := fmt.Sprintf("__.%s.22", month)
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
 	check(err)
 	defer db.Close()
@@ -510,7 +517,9 @@ func kmhDB(userid string) []kmh_text {
 	comPer = comPer / workDay
 	comPer = math.Round(comPer*10) / 10
 
-	record, err = db.Query("SELECT session_id, date, km , h, price, tea, count FROM sessions INNER JOIN (SELECT session_id AS orders_sessionid, sum(price) AS price, sum(tea) AS tea, count() AS count FROM orders WHERE user_id = ? GROUP BY session_id) ON sessions.session_id = orders_sessionid ORDER BY date", userid)
+	record, err = db.Query("SELECT session_id, date, km , h, price, tea, count FROM sessions INNER JOIN"+
+		" (SELECT session_id AS orders_sessionid, sum(price) AS price, sum(tea) AS tea, count() AS count FROM orders"+
+		" WHERE user_id = ? GROUP BY session_id) ON sessions.session_id = orders_sessionid WHERE date LIKE ? ORDER BY date", userid, monthSQL)
 	check(err)
 
 	smens := []kmh_text{}
@@ -1231,7 +1240,7 @@ func report(w http.ResponseWriter, r *http.Request) {
 			fmt.Println(err.Error())
 		}
 		out := rep{}
-		out.Month = "04" //todo сделать ввод отчетного месяца
+		out.Month = Month[userid]
 		out.UserName, _ = userDB(userid)
 		nalSum, nalCount, out.Nal = reportDB(out.Month, userid, "n")
 		out.NalSum = fmt.Sprintf("%.2f", nalSum)
@@ -1275,13 +1284,40 @@ func report(w http.ResponseWriter, r *http.Request) {
 } //2
 
 func kmh(w http.ResponseWriter, r *http.Request) {
-	t, err := template.ParseFiles("./templates/kmh.html",
-		"./templates/header.html", "./templates/footer.html")
-	check(err)
 	userCookie, err := r.Cookie("userid")
 	check(err)
 	userid := userCookie.Value
-	//out := kmhDB(FuelCons, FuelPrice, ComDis, float64(ComPer/WorkDay))
+	m, err := strconv.Atoi(Month[userid])
+	check(err)
+	z := r.FormValue("znak")
+	if z == "-" {
+		if m == 1 {
+			m = 12
+		} else {
+			m--
+		}
+		if m < 10 {
+			Month[userid] = "0" + fmt.Sprint(m)
+		} else {
+			Month[userid] = fmt.Sprint(m)
+		}
+	}
+	if z == "+" {
+		if m == 12 {
+			m = 1
+		} else {
+			m++
+		}
+		if m < 10 {
+			Month[userid] = "0" + fmt.Sprint(m)
+		} else {
+			Month[userid] = fmt.Sprint(m)
+		}
+	}
+
+	t, err := template.ParseFiles("./templates/kmh.html",
+		"./templates/header.html", "./templates/footer.html")
+	check(err)
 	out := kmhDB(userid)
 	t.ExecuteTemplate(w, "kmh", out)
 } //2
@@ -1326,7 +1362,6 @@ func editSmen(w http.ResponseWriter, r *http.Request) {
 } //2
 
 func saveDb(w http.ResponseWriter, r *http.Request) {
-	//todo сделать проверку пользователя для загрузки БД
 	t, err := template.ParseFiles("./templates/corect.html",
 		"./templates/header.html", "./templates/footer.html")
 	if err != nil {
@@ -1496,6 +1531,44 @@ func setSettings(w http.ResponseWriter, r *http.Request) {
 	defer settings(w, r)
 } //2
 
+func MonthMinus(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	m, err := strconv.Atoi(Month[userid])
+	check(err)
+	if m == 1 {
+		m = 12
+	} else {
+		m--
+	}
+	if m < 10 {
+		Month[userid] = "0" + fmt.Sprint(m)
+	} else {
+		Month[userid] = fmt.Sprint(m)
+	}
+	defer report(w, r)
+}
+
+func MonthPlus(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	m, err := strconv.Atoi(Month[userid])
+	check(err)
+	if m == 12 {
+		m = 1
+	} else {
+		m++
+	}
+	if m < 10 {
+		Month[userid] = "0" + fmt.Sprint(m)
+	} else {
+		Month[userid] = fmt.Sprint(m)
+	}
+	defer report(w, r)
+}
+
 func main() {
 	ver := versionDB()
 	fmt.Println("версия БД: ", ver)
@@ -1526,6 +1599,8 @@ func main() {
 	http.HandleFunc("/add_new_user", addNewUser)
 	http.HandleFunc("/settings", settings)
 	http.HandleFunc("/set_settings", setSettings)
+	http.HandleFunc("/report_minus", MonthMinus)
+	http.HandleFunc("/report_plus", MonthPlus)
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	http.Handle("/dir_db/", http.StripPrefix("/dir_db/", http.FileServer(http.Dir("../dir_db/"))))
