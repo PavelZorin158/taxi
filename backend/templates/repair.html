@@ -1,0 +1,46 @@
+{{ define "repair" }}
+
+{{ template "header" }}
+
+<main class="px-3">
+    <br>
+    <h3 style="color:#a89d69">{{ .UserName }}  {{ .CurKm }}км</h3>
+    <hr size="4">
+
+    {{ range .Details }}
+    <div>
+        <input type="checkbox" id="{{ .Detail }}" class="hiden"/>
+        <label for="{{ .Detail }}"><h3>Узел: {{ .Detail }}.  {{ .Date }}  {{ .Passed }}км</h3></label>
+        <div>
+            <table align="center">
+                {{ range .Repairs }}
+                <tr>
+                    <td align="left">{{ .Date }}</td>
+                    <td align="left">{{ .Km }}</td>
+                    <td align="left"> код: {{ .Cod }}</td>
+                </tr>
+                {{ else }}
+                <p>Нет замен</p>
+                {{ end }}
+            </table>
+        </div>
+        </input>
+        <br/>
+    </div>
+    {{ end }}
+
+
+    <hr size="4">
+    <form action="/add_repair" method="post">
+        Узел:<input autofocus type="text" name="detail" id="detail" size="10" autocomplete="off" class="btn btn-close-white">&nbsp
+        Код:<input autofocus type="text" name="cod" id="cod" size="10" class="btn btn-close-white">&nbsp
+        дата:<input autofocus type="text" name="date" id="date" size="10" class="btn btn-close-white">&nbsp
+        км:<input autofocus type="text" name="km" id="km" size="10" class="btn btn-close-white">&nbsp
+        <button class="btn btn-warning">Ok</button>
+    </form>
+    <br>
+</main>
+
+{{ template "footer" }}
+
+{{ end }}

@@ -116,6 +116,26 @@ type smen struct {
 	Coment       string             // для коментария
 }
 
+type repairs_type struct {
+	// под под структура для передачи данных в шаблон repair
+	Date string // дата замены
+	Km   string // пробег при замене
+	Cod  string // код детали
+}
+type details_type struct {
+	// под структура для передачи данных в шаблон repair
+	Detail  string         // деталь
+	Date    string         // дата последней замены
+	Passed  string         // пробег со времени последней замены
+	Repairs []repairs_type // срез со случаями замены
+}
+type repair_type struct {
+	// структура для передачи данных в шаблон repair
+	UserName string         // имя пользователя
+	CurKm    string         // текущий пробег
+	Details  []details_type // срез для узлов
+}
+
 var ComDis float64              // комиссия диспетчера (в %)
 var ComPer int                  // комиссия перевозчика за свои услуги (в рублях)
 var ComPerTer float64           // комиссия перевозчика за обналичку терминалов (в %)
@@ -134,8 +154,9 @@ func GetMd5(pas string) string {
 	return hex.EncodeToString(h.Sum(nil))
 } //2
 
-func versionDB() int {
-	// возвращает версию БД, 0 если база старая и нет поля версии, 1 если taxi.db нет
+func versionDB(v int) int {
+	// обновляет номер версии до значения полученного в v
+	// если v=0, только возвращает версию БД, возвращает 0 если база старая и нет поля версии, -1 если taxi.db нет
 	var ver int
 	if _, err := os.Stat("../dir_db/taxi.db"); os.IsNotExist(err) {
 		// если файл не найден
@@ -147,6 +168,15 @@ func versionDB() int {
 		fmt.Println("ошибка1 ", err)
 	}
 	defer db.Close()
+
+	if v > 0 {
+		records := `UPDATE settings SET ver = ?`
+		query, err := db.Prepare(records)
+		check(err)
+		_, err = query.Exec(v)
+		check(err)
+		return v
+	}
 
 	record, err := db.Query("SELECT ver FROM settings")
 	if err != nil {
@@ -346,7 +376,23 @@ func createTablesDB() {
  workday INTEGER);`
 	mySqlExec(db, table)
 
-	// проверяем, есть ли в таблице set данные в поле ver
+	//таблица для хранения ремонтов
+	// repair_id номер ремонта
+	// user_id какому пользователю принадлежит
+	// date дата ремонта
+	// km пробег
+	// detail ремонтируемый узел
+	// cod код запчасти
+	table = `CREATE TABLE IF NOT EXISTS repair (
+ repair_id INTEGER PRIMARY KEY AUTOINCREMENT,
+ user_id warchar(20),
+ date warchar(8),
+ km INTEGER,
+ detail TEXT,
+ cod TEXT);`
+	mySqlExec(db, table)
+
+	//проверяем, есть ли в таблице set данные в поле ver
 	record, err := db.Query("SELECT ver FROM settings")
 	if err != nil {
 		log.Fatal(err)
@@ -547,19 +593,37 @@ func kmhDB(userid string) []kmh_text {
 	return smens
 } //2
 
+func resetAutoIncrementOS() {
+	//если таблица orderssession пустая, то сбрасывает счетчик AUTO_INCREMENT
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+	record, err := db.Query("SELECT count() FROM orderssession")
+	check(err)
+	defer record.Close()
+	var count int
+	for record.Next() {
+		record.Scan(&count)
+		check(err)
+	}
+	if count == 0 {
+		records := `UPDATE SQLITE_SEQUENCE SET SEQ=0 WHERE NAME='orderssession'`
+		query, err := db.Prepare(records)
+		check(err)
+		_, err = query.Exec()
+		check(err)
+	}
+}
+
 func indexNumDB() {
 	// нумерует заказы в таблице smena по порядку
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer db.Close()
 
 	// читаем в срез nums все записи поля num (номера заказа)
 	record, err := db.Query("SELECT num FROM smena")
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 	defer record.Close()
 	nums := []int{}
 	num := 0
@@ -577,13 +641,9 @@ func indexNumDB() {
 	for i := 1; i <= len(nums); i++ {
 		records = `UPDATE smena SET num = ? WHERE num = ?`
 		query, err := db.Prepare(records)
-		if err != nil {
-			log.Fatal(err)
-		}
+		check(err)
 		_, err = query.Exec(i, nums[i-1])
-		if err != nil {
-			log.Fatal(err)
-		}
+		check(err)
 	}
 }
 
@@ -1214,6 +1274,7 @@ func scloseForm(w http.ResponseWriter, r *http.Request) {
 	addSessionsDB(userid, date, km, h) // добавляет итоги смены в таблицу sessions
 	fmt.Println("userid="+userid, " Закрытие смены: ", km, "км, ", h, "ч")
 	smenaTOordersDB(userid, date)
+	resetAutoIncrementOS()
 	dateToUsersDB(userid, "close")
 	defer smena(w, r)
 } //2
@@ -1569,14 +1630,53 @@ func MonthPlus(w http.ResponseWriter, r *http.Request) {
 	defer report(w, r)
 }
 
+func repair(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	var out repair_type
+	out.UserName, _ = userDB(userid)
+	t, err := template.ParseFiles("templates/repair.html",
+		"templates/header.html", "templates/footer.html")
+	check(err)
+	out.CurKm = "202000"
+
+	var details details_type
+	var repairs = repairs_type{"05.08.22", "165000", "stelox 2310"}
+	details.Detail = "возд.фильтр"
+	details.Date = "10.10.22"
+	details.Passed = "22000"
+	details.Repairs = append(details.Repairs, repairs)
+	repairs.Date = "10.10.22"
+	repairs.Km = "180000"
+	repairs.Cod = "patron 5412"
+	details.Repairs = append(details.Repairs, repairs)
+	out.Details = append(out.Details, details)
+
+	repairs.Date = "11.12.22"
+	repairs.Km = "190000"
+	repairs.Cod = "patron 5412"
+	details.Repairs = append(details.Repairs, repairs)
+	details.Detail = "Масл.Фильтр"
+	details.Date = "11.12.22"
+	details.Passed = "10000"
+	out.Details = append(out.Details, details)
+	err = t.ExecuteTemplate(w, "repair", out)
+	check(err)
+}
+
 func main() {
-	ver := versionDB()
+	ver := versionDB(0)
 	fmt.Println("версия БД: ", ver)
 	if ver == 0 {
-		fmt.Println("обнаружена старая БД. Трансформирую в версию: 2")
+		fmt.Println("Обнаружена старая БД. Трансформирую в версию: 2")
 		transformDBto2()
 	} else if ver == -1 {
 		fmt.Println("База данных taxi.db не найдена. Создана пустая")
+		createTablesDB()
+	} else if ver == 2 {
+		fmt.Println("Обновляется до Ver 3 (добавлена таблица repair)")
+		versionDB(3)
 		createTablesDB()
 	}
 	loadSettingsDB()
@@ -1601,6 +1701,7 @@ func main() {
 	http.HandleFunc("/set_settings", setSettings)
 	http.HandleFunc("/report_minus", MonthMinus)
 	http.HandleFunc("/report_plus", MonthPlus)
+	http.HandleFunc("/repair", repair)
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	http.Handle("/dir_db/", http.StripPrefix("/dir_db/", http.FileServer(http.Dir("../dir_db/"))))
