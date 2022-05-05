@@ -2,22 +2,41 @@
 
 {{ template "header" }}
 
-<main class="px-3">
+<main class="px-3" xmlns="http://www.w3.org/1999/html">
     <br>
-    <h3 style="color:#a89d69">{{ .UserName }}  {{ .CurKm }}км</h3>
+    {{ if eq .CurKm "" }}
+    <h3 style="color:#ff0000">Введите текущий пробег!</h3>
+    {{ end }}
+
+    <form action="/repair" method="post"><h3 style="color:#a89d69">{{ .UserName }}&nbsp&nbsp&nbsp
+        <input type="text" name="ckm" id="ckm" size="3" autocomplete="off" value="{{ .CurKm }}" style="background-color:#1c1c1c; color:#a89d69">
+        км&nbsp<button class="btn btn-secondary">Ok</button></h3>
+    </form>
+    <h3 style="color:#b1b1b1">Ремонты</h3>
     <hr size="4">
 
     {{ range .Details }}
     <div>
         <input type="checkbox" id="{{ .Detail }}" class="hiden"/>
-        <label for="{{ .Detail }}"><h3>Узел: {{ .Detail }}.  {{ .Date }}  {{ .Passed }}км</h3></label>
+        <label for="{{ .Detail }}">
+
+                <table>
+                    <tr>
+                        <td align="left"><h3>{{ .Detail }}&nbsp</h3></td>
+                        <td align="center"><h3>&nbsp{{ .Date }}&nbsp</h3></td>
+                        <td align="right"><h3>&nbsp{{ .Passed }}</h3></td>
+                    </tr>
+                </table>
+
+        </label>
         <div>
             <table align="center">
                 {{ range .Repairs }}
                 <tr>
-                    <td align="left">{{ .Date }}</td>
-                    <td align="left">{{ .Km }}</td>
-                    <td align="left"> код: {{ .Cod }}</td>
+                    <td align="right">{{ .Repair_id }}&nbsp</td>
+                    <td align="center">&nbsp{{ .Date }}&nbsp</td>
+                    <td align="right">&nbsp{{ .Km }}&nbsp</td>
+                    <td align="left">&nbsp{{ .Cod }}</td>
                 </tr>
                 {{ else }}
                 <p>Нет замен</p>
@@ -25,18 +44,24 @@
             </table>
         </div>
         </input>
-        <br/>
+        <br>
     </div>
     {{ end }}
 
 
     <hr size="4">
     <form action="/add_repair" method="post">
-        Узел:<input autofocus type="text" name="detail" id="detail" size="10" autocomplete="off" class="btn btn-close-white">&nbsp
-        Код:<input autofocus type="text" name="cod" id="cod" size="10" class="btn btn-close-white">&nbsp
-        дата:<input autofocus type="text" name="date" id="date" size="10" class="btn btn-close-white">&nbsp
-        км:<input autofocus type="text" name="km" id="km" size="10" class="btn btn-close-white">&nbsp
+        Узел: <input autofocus type="text" name="detail" id="detail" size="25" autocomplete="off" style="background-color:#141414; color:#ffbb00" value="{{ .Form.Detail }}">&nbsp&nbsp
+        Код: <input type="text" name="cod" id="cod" size="15" style="background-color:#141414; color:#ffbb00" value="{{ .Form.Cod }}">&nbsp
+        <br><br>
+        дата: <input type="text" name="date" id="date" size="6" autocomplete="off" style="background-color:#141414; color:#ffbb00" value="{{ .Form.Date }}">&nbsp
+        км: <input type="text" name="km" id="km" size="6" autocomplete="off" style="background-color:#141414; color:#ffbb00" value="{{ .Form.Km }}">&nbsp&nbsp
         <button class="btn btn-warning">Ok</button>
+        <br><br>
+        Номер: <input type="text" name="repair_id" id="repair_id" size="3" autocomplete="off" style="background-color:#141414; color:#ff0000" value="{{ .Form.Id }}">&nbsp&nbsp
+        <input type="submit" value="Загрузить" formaction="/load_repair" formmethod="post" class="btn btn-secondary"/>&nbsp
+        <input type="submit" value="Изменить" formaction="/edit_repair" formmethod="post" class="btn btn-warning"/>&nbsp
+        <input type="submit" value="Удалить" formaction="/del_repair" formmethod="post" class="btn btn-danger"/>
     </form>
     <br>
 </main>

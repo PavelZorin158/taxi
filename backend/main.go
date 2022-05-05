@@ -116,24 +116,34 @@ type smen struct {
 	Coment       string             // для коментария
 }
 
+type repair_form_type struct {
+	// тип для заполнения формы редактирования ремонта
+	Id     string
+	Detail string
+	Cod    string
+	Date   string
+	Km     string
+}
 type repairs_type struct {
 	// под под структура для передачи данных в шаблон repair
-	Date string // дата замены
-	Km   string // пробег при замене
-	Cod  string // код детали
+	Repair_id string // id
+	Date      string // дата замены
+	Km        string // пробег при замене
+	Cod       string // код детали
 }
 type details_type struct {
 	// под структура для передачи данных в шаблон repair
 	Detail  string         // деталь
 	Date    string         // дата последней замены
 	Passed  string         // пробег со времени последней замены
-	Repairs []repairs_type // срез со случаями замены
+	Repairs []repairs_type // срез со случаями ремонтов
 }
 type repair_type struct {
 	// структура для передачи данных в шаблон repair
-	UserName string         // имя пользователя
-	CurKm    string         // текущий пробег
-	Details  []details_type // срез для узлов
+	UserName string           // имя пользователя
+	CurKm    string           // текущий пробег
+	Details  []details_type   // срез для узлов
+	Form     repair_form_type // тип для заполнения формы редактирования ремонта
 }
 
 var ComDis float64              // комиссия диспетчера (в %)
@@ -141,6 +151,7 @@ var ComPer int                  // комиссия перевозчика за 
 var ComPerTer float64           // комиссия перевозчика за обналичку терминалов (в %)
 var ComPerOnline float64        // комиссия перевозчика за обналичку онлайнов (в %)
 var Month = map[string]string{} // key - userid, value - отчетный месяц
+var Km = map[string]string{}    // key - userid, value - текущий пробег
 
 func check(e error) {
 	if e != nil {
@@ -1010,6 +1021,93 @@ func editSmenDB(userid string, sessionId string, km string, h string) {
 	check(err)
 } //2
 
+func addRepairDB(userid, detail, cod, date, km string) {
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+
+	records := `INSERT INTO repair (user_id, date, km, detail, cod) VALUES (?, ?, ?, ?, ?)`
+	query, err := db.Prepare(records)
+	check(err)
+	_, err = query.Exec(userid, date, km, detail, cod)
+	check(err)
+}
+
+func delRepairDB(userid, repair_id string) {
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+
+	records := `DELETE FROM repair WHERE repair_id = ? AND user_id = ?`
+	query, err := db.Prepare(records)
+	check(err)
+	_, err = query.Exec(repair_id, userid)
+	check(err)
+}
+
+func loadrepairDB(userid, id string) repair_form_type {
+	var out repair_form_type
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+
+	record, err := db.Query("SELECT date, km, detail, cod FROM repair WHERE repair_id = ? AND user_id = ?", id, userid)
+	check(err)
+	defer record.Close()
+	for record.Next() {
+		record.Scan(&out.Date, &out.Km, &out.Detail, &out.Cod)
+		check(err)
+	}
+	out.Id = id
+	return out
+}
+
+func editRepairDB(userid, repair_id, detail, cod, date, km string) {
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+
+	records := `UPDATE repair SET date = ?, km = ?, detail = ?, cod = ? WHERE repair_id = ? AND user_id = ?`
+	query, err := db.Prepare(records)
+	check(err)
+	_, err = query.Exec(date, km, detail, cod, repair_id, userid)
+	check(err)
+}
+
+func repairDB(userid string) []details_type {
+	var details []details_type
+	var i_details int = -1 // номер элемента в срезе для lastDetail
+	var tempDetail details_type
+	var curentDetail, lastDetail string
+	var repair repairs_type
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+
+	record, err := db.Query("SELECT repair_id, date, km, detail, cod FROM repair WHERE user_id = ? ORDER BY detail, km DESC", userid)
+	check(err)
+	defer record.Close()
+	for record.Next() {
+		record.Scan(&repair.Repair_id, &repair.Date, &repair.Km, &curentDetail, &repair.Cod)
+		check(err)
+		if lastDetail != curentDetail {
+			// началась новая группа деталей(узлов) поэтому создаем новый элемент среза и добавляем туда первую запись
+			tempDetail.Detail = curentDetail
+			tempDetail.Date = repair.Date
+			tempDetail.Passed = repair.Km // пока здесь километраж при ремонте, потом отнимем текущий и запишем сюда разницу
+			tempDetail.Repairs = append(tempDetail.Repairs, repair)
+			details = append(details, tempDetail)
+			tempDetail = details_type{}
+			lastDetail = curentDetail
+			i_details++
+		} else {
+			// продолжается прочитанная прошлый раз группа, просто добавляем ремонт
+			details[i_details].Repairs = append(details[i_details].Repairs, repair)
+		}
+	}
+	return details
+}
+
 func okOrder(in string) []string {
 	// из строки введенной в форме выдает правильный срез для добавления заказа
 	// в котором inSl[0] - тип заказа
@@ -1630,39 +1728,111 @@ func MonthPlus(w http.ResponseWriter, r *http.Request) {
 	defer report(w, r)
 }
 
+func differenceKm(details []details_type, km string) []details_type {
+	var tempKm int
+	curKm, err := strconv.Atoi(km)
+	check(err)
+
+	for i := range details {
+		tempKm, err = strconv.Atoi(details[i].Passed)
+		check(err)
+		details[i].Passed = fmt.Sprint((curKm - tempKm) / 1000)
+	}
+	return details
+}
+
 func repair(w http.ResponseWriter, r *http.Request) {
 	userCookie, err := r.Cookie("userid")
 	check(err)
 	userid := userCookie.Value
 	var out repair_type
 	out.UserName, _ = userDB(userid)
+
+	km := ""
+	km = r.FormValue("ckm")
+	if km != "" {
+		// на странице введен пробег
+		if km == " " {
+			km = ""
+		}
+		Km[userid] = km
+		out.CurKm = km
+	} else {
+		// пробег не вводили. читаем текущий
+		out.CurKm = Km[userid]
+	}
+
 	t, err := template.ParseFiles("templates/repair.html",
 		"templates/header.html", "templates/footer.html")
 	check(err)
-	out.CurKm = "202000"
 
-	var details details_type
-	var repairs = repairs_type{"05.08.22", "165000", "stelox 2310"}
-	details.Detail = "возд.фильтр"
-	details.Date = "10.10.22"
-	details.Passed = "22000"
-	details.Repairs = append(details.Repairs, repairs)
-	repairs.Date = "10.10.22"
-	repairs.Km = "180000"
-	repairs.Cod = "patron 5412"
-	details.Repairs = append(details.Repairs, repairs)
-	out.Details = append(out.Details, details)
-
-	repairs.Date = "11.12.22"
-	repairs.Km = "190000"
-	repairs.Cod = "patron 5412"
-	details.Repairs = append(details.Repairs, repairs)
-	details.Detail = "Масл.Фильтр"
-	details.Date = "11.12.22"
-	details.Passed = "10000"
-	out.Details = append(out.Details, details)
+	tempDetails := repairDB(userid)
+	if out.CurKm == "" {
+		out.Details = tempDetails
+	} else {
+		out.Details = differenceKm(tempDetails, out.CurKm)
+	}
 	err = t.ExecuteTemplate(w, "repair", out)
 	check(err)
+}
+
+func addRepair(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	detail := r.FormValue("detail")
+	cod := r.FormValue("cod")
+	date := r.FormValue("date")
+	km := r.FormValue("km")
+	if detail != "" || cod != "" || date != "" || km != "" {
+		addRepairDB(userid, detail, cod, date, km)
+	}
+	defer repair(w, r)
+}
+
+func loadRepair(w http.ResponseWriter, r *http.Request) {
+	var out repair_type
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	repair_id := r.FormValue("repair_id")
+	if repair_id != "" {
+		out.Form = loadrepairDB(userid, repair_id)
+	}
+	out.UserName, _ = userDB(userid)
+	out.CurKm = Km[userid]
+	out.Details = repairDB(userid)
+	t, err := template.ParseFiles("templates/repair.html",
+		"templates/header.html", "templates/footer.html")
+	check(err)
+	err = t.ExecuteTemplate(w, "repair", out)
+	check(err)
+}
+
+func editRepair(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	repair_id := r.FormValue("repair_id")
+	detail := r.FormValue("detail")
+	cod := r.FormValue("cod")
+	date := r.FormValue("date")
+	km := r.FormValue("km")
+	if detail != "" || cod != "" || date != "" || km != "" {
+		editRepairDB(userid, repair_id, detail, cod, date, km)
+	}
+	defer repair(w, r)
+}
+
+func delRepair(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	repair_id := r.FormValue("repair_id")
+	if repair_id != "" {
+		delRepairDB(userid, repair_id)
+	}
+	defer repair(w, r)
 }
 
 func main() {
@@ -1702,6 +1872,10 @@ func main() {
 	http.HandleFunc("/report_minus", MonthMinus)
 	http.HandleFunc("/report_plus", MonthPlus)
 	http.HandleFunc("/repair", repair)
+	http.HandleFunc("/add_repair", addRepair)
+	http.HandleFunc("/load_repair", loadRepair)
+	http.HandleFunc("/edit_repair", editRepair)
+	http.HandleFunc("/del_repair", delRepair)
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	http.Handle("/dir_db/", http.StripPrefix("/dir_db/", http.FileServer(http.Dir("../dir_db/"))))
