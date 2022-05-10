@@ -90,6 +90,7 @@ type rep struct {
 	ComSum    string // ComDis + ComPer
 	PayTerm   string // оплачено терминалами
 	PayOnline string // оплачено онлайнами
+	PayKamp   string // оплачено компаниями
 	PaySum    string // PayTerm + PayOnline
 	Balance   string // ComSum - PaySum
 
@@ -1425,7 +1426,8 @@ func report(w http.ResponseWriter, r *http.Request) {
 		out.PayTerm = fmt.Sprintf("%.2f", payTerm)
 		payOnline := onlineSum / 100 * (100 - ComPerOnline)
 		out.PayOnline = fmt.Sprintf("%.2f", payOnline)
-		paySum := payTerm + payOnline
+		out.PayKamp = fmt.Sprintf("%.2f", kampSum)
+		paySum := payTerm + payOnline + kampSum
 		out.PaySum = fmt.Sprintf("%.2f", paySum)
 		out.Balance = fmt.Sprintf("%.2f", comSum-paySum)
 		distance, hours, count := distanceHDB(userid, out.Month)
