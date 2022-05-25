@@ -39,6 +39,7 @@ type Sett struct {
 	ComPer       string // комиссия перевозчика
 	ComPerTer    string // комиссия перевозчика за терминалы
 	ComPerOnline string // комиссия перевозчика за онлайны
+	Coment       string // для коментария
 }
 
 type close_smena struct {
@@ -98,7 +99,7 @@ type rep struct {
 }
 
 type smen struct {
-	// структура для передачи данных в шаблон smena
+	// структура для передачи данных в шаблон corect
 	UserName     string             // имя пользователя
 	SessionId    string             // id смены
 	Date         string             // дата открытой смены
@@ -556,6 +557,32 @@ func smenaDB(userid string) []order_smena_text {
 	return orders
 } //2
 
+func loadSessionDB(sessionid, userid string) []order_smena_text {
+	// возвращает срез заказов для смены sessionId для userid из таблицы orders
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+	record, err := db.Query("SELECT orders_id, price, tea, type FROM orders WHERE user_id = ? AND session_id = ?;", userid, sessionid)
+	check(err)
+	defer record.Close()
+	orders := []order_smena_text{}
+	order := order_smena{}
+	orderText := order_smena_text{}
+	for record.Next() {
+		record.Scan(&order.Num, &order.Price, &order.Tea, &order.Typ)
+		if err != nil {
+			fmt.Println("Ошибка record.Scan")
+			panic(err)
+		}
+
+		orderText.Num = fmt.Sprintf(" %d ", order.Num)
+		orderText.Order = fmt.Sprintf(" %.2f    (%.2f)", order.Price, order.Tea)
+		orderText.Typ = order.Typ
+		orders = append(orders, orderText)
+	}
+	return orders
+}
+
 func kmhDB(userid string) []kmh_text {
 	// возвращает срез смен из таблицы sessions со списком смен для пользователя userid
 	month := Month[userid]
@@ -822,6 +849,32 @@ func editOrderDB(userid string, osId string, price string, tea string, typ strin
 	check(err)
 } //2
 
+func editOrdercloseDB(userid string, ordersid string, price string, tea string, typ string) {
+	// изменяет заказ номер num в БД в таблице orders
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+
+	records := `UPDATE orders SET price = ?, tea = ?, type = ? WHERE orders_id = ? AND user_id = ?`
+	query, err := db.Prepare(records)
+	check(err)
+	_, err = query.Exec(price, tea, typ, ordersid, userid)
+	check(err)
+}
+
+func addOrdercloseDB(userid, sessionid, price, tea, typ string) {
+	// добавляет заказ в БД в таблицу orders
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+
+	records := `INSERT INTO orders(user_id, session_id, price, tea, type) VALUES (?, ?, ?, ?, ?)`
+	query, err := db.Prepare(records)
+	check(err)
+	_, err = query.Exec(userid, sessionid, price, tea, typ)
+	check(err)
+}
+
 func delOrderDB(userid string, osId int) {
 	// удаление заказа n для userid из таблицы orderssession
 	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
@@ -834,6 +887,19 @@ func delOrderDB(userid string, osId int) {
 	_, err = query.Exec(osId, userid)
 	check(err)
 } //2
+
+func delOrderCloseDB(orderid, userid string) {
+	// удаление заказа orderid для userid из таблицы orders
+	db, err := sql.Open("sqlite3", "../dir_db/taxi.db")
+	check(err)
+	defer db.Close()
+
+	records := `DELETE FROM orders WHERE orders_id = ? AND user_id = ?`
+	query, err := db.Prepare(records)
+	check(err)
+	_, err = query.Exec(orderid, userid)
+	check(err)
+}
 
 func dateOpenSessionDB(userid string) string {
 	// возвращает дату открытой смены из таблицы users по userid. "close" если закрыта
@@ -1523,13 +1589,18 @@ func editSmen(w http.ResponseWriter, r *http.Request) {
 } //2
 
 func saveDb(w http.ResponseWriter, r *http.Request) {
-	t, err := template.ParseFiles("./templates/corect.html",
+	t, err := template.ParseFiles("./templates/settings.html",
 		"./templates/header.html", "./templates/footer.html")
 	if err != nil {
 		fmt.Println("ошибка template.ParseFiles")
 		fmt.Println(err.Error())
 	}
-	var out smen
+	var out Sett
+
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	out.UserName, _ = userDB(userid)
 
 	// parse data
 	err = r.ParseMultipartForm(1024)
@@ -1558,14 +1629,13 @@ func saveDb(w http.ResponseWriter, r *http.Request) {
 		out.Coment = "okSaveDB"
 		file.Close()
 	}
-	out.Order = smenaDB("1") // todo прочитать из куков
-	out.NalSum, out.NalCount = smenaSumTypDB("1", "n")
-	out.TermSum, out.TermCount = smenaSumTypDB("1", "t")
-	out.OnlineSum, out.OnlineCount = smenaSumTypDB("1", "o")
-	out.KampSum, out.KampCount = smenaSumTypDB("1", "k")
-	out.TotalSum, out.TotalCount = smenaSumDB("1")
 
-	t.ExecuteTemplate(w, "corect", out)
+	fuelCons, fuelPrice, workDay := userSettingsDB(userid)
+	out.FuelCons = fmt.Sprint(fuelCons)
+	out.FuelPrice = fmt.Sprint(fuelPrice)
+	out.WorkDay = fmt.Sprint(workDay)
+	out.ComDis, out.ComPer, out.ComPerTer, out.ComPerOnline = setDB()
+	t.ExecuteTemplate(w, "settings", out)
 }
 
 func errorDate(w http.ResponseWriter, r *http.Request) {
@@ -1671,6 +1741,7 @@ func settings(w http.ResponseWriter, r *http.Request) {
 	out.FuelPrice = fmt.Sprint(fuelPrice)
 	out.WorkDay = fmt.Sprint(workDay)
 	out.ComDis, out.ComPer, out.ComPerTer, out.ComPerOnline = setDB()
+	out.Coment = "ok"
 	t.ExecuteTemplate(w, "settings", out)
 } //2
 
@@ -1837,6 +1908,65 @@ func delRepair(w http.ResponseWriter, r *http.Request) {
 	defer repair(w, r)
 }
 
+func loadSession(w http.ResponseWriter, r *http.Request) {
+	t, err := template.ParseFiles("templates/editord.html",
+		"templates/header.html", "templates/footer.html")
+	check(err)
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	sessionId := r.FormValue("in")
+	var out smen
+	out.UserName, _ = userDB(userid)
+	out.SessionId = sessionId
+	out.Order = loadSessionDB(sessionId, userid)
+
+	err = t.ExecuteTemplate(w, "editord", out)
+	check(err)
+}
+
+func delorderclose(w http.ResponseWriter, r *http.Request) {
+	t, err := template.ParseFiles("templates/editord.html",
+		"templates/header.html", "templates/footer.html")
+	check(err)
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	orderId := r.FormValue("in")
+	sessionId := r.FormValue("sessionid")
+	delOrderCloseDB(orderId, userid)
+	var out smen
+	out.UserName, _ = userDB(userid)
+	out.SessionId = sessionId
+	out.Order = loadSessionDB(sessionId, userid)
+	err = t.ExecuteTemplate(w, "editord", out)
+	check(err)
+}
+
+func editorderclose(w http.ResponseWriter, r *http.Request) {
+	t, err := template.ParseFiles("templates/editord.html",
+		"templates/header.html", "templates/footer.html")
+	check(err)
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	sessionId := r.FormValue("sessionid")
+	num := r.FormValue("num")
+	edit := r.FormValue("edit")
+	inSl := okOrder(edit)
+	if num != "" {
+		editOrdercloseDB(userid, num, inSl[1], inSl[2], inSl[0])
+	} else {
+		addOrdercloseDB(userid, sessionId, inSl[1], inSl[2], inSl[0])
+	}
+	var out smen
+	out.UserName, _ = userDB(userid)
+	out.SessionId = sessionId
+	out.Order = loadSessionDB(sessionId, userid)
+	err = t.ExecuteTemplate(w, "editord", out)
+	check(err)
+}
+
 func main() {
 	ver := versionDB(0)
 	fmt.Println("версия БД: ", ver)
@@ -1878,6 +2008,9 @@ func main() {
 	http.HandleFunc("/load_repair", loadRepair)
 	http.HandleFunc("/edit_repair", editRepair)
 	http.HandleFunc("/del_repair", delRepair)
+	http.HandleFunc("/load_session", loadSession)
+	http.HandleFunc("/delorder", delorderclose)
+	http.HandleFunc("/editorder", editorderclose)
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	http.Handle("/dir_db/", http.StripPrefix("/dir_db/", http.FileServer(http.Dir("../dir_db/"))))

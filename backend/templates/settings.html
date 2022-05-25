@@ -39,9 +39,20 @@
             {{ end }}
         </table>
         <button class="btn btn-warning">&nbsp&nbspOk&nbsp&nbsp</button>
+        <br><br>
     </form>
     {{ if eq .UserName "Rick" }}
-    <p><h5 style="color:red">кнопочки для админа</h5></p>
+    <form enctype="multipart/form-data" action="/save_db" method="post">
+        <p><input type="file" name="file" id="file"><input type="submit" value="Загрузить БД" class="btn btn-danger">&nbsp
+            <a  href="dir_db/taxi.db" download class="btn btn-secondary">Скачать БД</a></p>
+    </form>
+    {{ end }}
+
+    {{ if eq .Coment "errSaveDB" }}
+    <p><h4 style="color:red">Не правильное имя для загрузки taxi.db</h4></p>
+    {{ end }}
+    {{ if eq .Coment "okSaveDB" }}
+    <p><h4 style="color:greenyellow">taxi.db загружена на сервер</h4></p>
     {{ end }}
     <br>
 

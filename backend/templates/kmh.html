@@ -45,7 +45,8 @@
     <hr size="4">
     <form action="/del_smen" method="post">
         <input autofocus type="text" name="in" id="in" placeholder="номер смены" autocomplete="off" maxlength="3" size="9" class="btn btn-close-white">&nbsp
-        <button class="btn btn-danger">Удалить</button>
+        <button class="btn btn-danger">Удалить</button>&nbsp
+        <input type="submit" value="Загрузить" formaction="/load_session" formmethod="post" class="btn btn-secondary"/>
     </form>
     <br>
     <form action="/edit_smen" method="post">
@@ -55,7 +56,6 @@
         <button class="btn btn-warning">Изменить</button>
     </form>
     <br>
-    <p><a  href="dir_db/taxi.db" download class="btn btn-secondary">Скачать БД</a></p>
 </main>
 
 {{ template "footer" }}
