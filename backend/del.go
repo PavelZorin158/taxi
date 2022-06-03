@@ -1,20 +1,13 @@
 package main
 
-import (
-	"fmt"
-	"time"
-)
+import "fmt"
 
 func main() {
-	now := time.Now()
-	mes := now.Format("01")
-	fmt.Println("месяц ", mes)
-	var Mon = map[string]string{}
-	var mon string
-	for i := 0; i < 4; i++ {
-		mon = "--" + fmt.Sprint(i) + "--"
-		Mon[mon] = mes
+	var s []string
+	s = append(s, "a")
+	s = append(s, "b")
+	s = append(s, "c")
+	for i := range s {
+		fmt.Println(i)
 	}
-	fmt.Println(Mon)
-	fmt.Println(Mon["--1--"])
 }
