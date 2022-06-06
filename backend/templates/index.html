@@ -44,7 +44,22 @@
         <button class="btn btn-warning">Ok</button>
     </form>
     <br>
-    <a href="/smena_close" class="btn btn-secondary">Закончить смену</a>
+    <a href="/smena_close" class="btn btn-secondary">Закончить смену</a>&nbsp&nbsp
+
+        <input type="checkbox" id="coment" class="hiden"/>
+
+        <label for="coment" class="btn btn-secondary">
+            <h4>&nbsp комент &nbsp</h4>
+        </label>
+
+        <div>
+            <form action="/edit_comment" method="post">
+                <input autofocus type="text" name="incomment" id="incomment" value="{{ .IndexComment }}" size="40" autocomplete="off" class="btn btn-close-white">&nbsp
+                <button class="btn btn-warning">Ok</button>
+            </form>
+
+        </div>
+
     <br>
     <br>
 </main>

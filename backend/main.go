@@ -116,6 +116,7 @@ type smen struct {
 	TotalCount   string             // общее количество всех заказов
 	Order        []order_smena_text // срез для заказов
 	Coment       string             // для коментария
+	IndexComment string             // для комментария :)
 }
 
 type repair_form_type struct {
@@ -148,12 +149,13 @@ type repair_type struct {
 	Form     repair_form_type // тип для заполнения формы редактирования ремонта
 }
 
-var ComDis float64              // комиссия диспетчера (в %)
-var ComPer int                  // комиссия перевозчика за свои услуги (в рублях)
-var ComPerTer float64           // комиссия перевозчика за обналичку терминалов (в %)
-var ComPerOnline float64        // комиссия перевозчика за обналичку онлайнов (в %)
-var Month = map[string]string{} // key - userid, value - отчетный месяц
-var Km = map[string]string{}    // key - userid, value - текущий пробег
+var ComDis float64                     // комиссия диспетчера (в %)
+var ComPer int                         // комиссия перевозчика за свои услуги (в рублях)
+var ComPerTer float64                  // комиссия перевозчика за обналичку терминалов (в %)
+var ComPerOnline float64               // комиссия перевозчика за обналичку онлайнов (в %)
+var Month = map[string]string{}        // key - userid, value - отчетный месяц
+var Km = map[string]string{}           // key - userid, value - текущий пробег
+var IndexComment = map[string]string{} // key - userid, value - коментарий
 
 func check(e error) {
 	if e != nil {
@@ -1278,6 +1280,7 @@ func smena(w http.ResponseWriter, r *http.Request) {
 			out.KampSum, out.KampCount = smenaSumTypDB(userid, "k")
 			out.TotalSum, out.TotalCount = smenaSumDB(userid)
 			out.Coment = "ok"
+			out.IndexComment = IndexComment[userid]
 
 			t.ExecuteTemplate(w, "index", out)
 		}
@@ -1814,6 +1817,16 @@ func differenceKm(details []details_type, km string) []details_type {
 	return details
 }
 
+func editcomment(w http.ResponseWriter, r *http.Request) {
+	userCookie, err := r.Cookie("userid")
+	check(err)
+	userid := userCookie.Value
+	// todo добавить проверку, что есть куки userid
+	com := r.FormValue("incomment")
+	IndexComment[userid] = com
+	defer smena(w, r)
+}
+
 func repair(w http.ResponseWriter, r *http.Request) {
 	userCookie, err := r.Cookie("userid")
 	check(err)
@@ -2011,6 +2024,7 @@ func main() {
 	http.HandleFunc("/load_session", loadSession)
 	http.HandleFunc("/delorder", delorderclose)
 	http.HandleFunc("/editorder", editorderclose)
+	http.HandleFunc("/edit_comment", editcomment)
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	http.Handle("/dir_db/", http.StripPrefix("/dir_db/", http.FileServer(http.Dir("../dir_db/"))))
